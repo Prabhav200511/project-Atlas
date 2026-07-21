@@ -3,9 +3,11 @@ services:
     name: project-atlas-api
     runtime: python
     buildCommand: pip install .
-    startCommand: ./scripts/start_production.sh
+    startCommand: bash ./scripts/start_production.sh
     healthCheckPath: /ready
     envVars:
+      - key: FORWARDED_ALLOW_IPS
+        value: "*"
       - key: DATABASE_URL
         sync: false
       - key: SUPABASE_URL

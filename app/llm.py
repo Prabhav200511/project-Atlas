@@ -1,8 +1,12 @@
+import logging
+
 from google import genai
 from google.genai import errors
 
 from app.config import Settings
 from app.ingestion import IngestionError
+
+logger = logging.getLogger("atlas.llm")
 
 
 class GeminiGateway:
@@ -24,5 +28,10 @@ class GeminiGateway:
                 config={"temperature": 0, **({"response_mime_type": "application/json"} if json_output else {})},
             )
         except errors.APIError as exc:
-            raise IngestionError("model_gateway_error", "AI provider request failed", 502) from exc
+            msg = getattr(exc, "message", None) or str(exc)
+            logger.error("Gemini API error for model %s: %s", self.model, msg)
+            raise IngestionError("model_gateway_error", f"AI provider request failed ({msg})", 502) from exc
+        except Exception as exc:
+            logger.exception("Unexpected AI provider error for model %s", self.model)
+            raise IngestionError("model_gateway_error", f"AI provider request failed: {exc}", 502) from exc
         return (response.text or "").strip()

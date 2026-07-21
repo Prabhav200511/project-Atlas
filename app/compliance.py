@@ -257,7 +257,12 @@ def _extract_records(
         match = re.search(getattr(rule, attribute), extracted, re.IGNORECASE | re.MULTILINE)
         if match:
             raw = match.group(1).strip()
-            records.append((rule, _record(document, extracted, rule.key, raw, match.group(0), equipment_id)))
+            line_start = extracted.rfind("\n", 0, match.start())
+            line_start = 0 if line_start == -1 else line_start + 1
+            line_end = extracted.find("\n", match.end())
+            line_end = len(extracted) if line_end == -1 else line_end
+            full_line = extracted[line_start:line_end].strip()
+            records.append((rule, _record(document, extracted, rule.key, raw, full_line, equipment_id)))
     return records
 
 

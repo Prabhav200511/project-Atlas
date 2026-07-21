@@ -23,11 +23,9 @@ async def test_invalid_api_key_becomes_safe_gateway_error() -> None:
     with pytest.raises(IngestionError) as caught:
         await gateway.generate("instructions", "content")
 
-    assert (caught.value.code, caught.value.status_code, caught.value.message) == (
-        "model_gateway_error",
-        502,
-        "AI provider request failed",
-    )
+    assert caught.value.code == "model_gateway_error"
+    assert caught.value.status_code == 502
+    assert caught.value.message.startswith("AI provider request failed")
 
 
 @pytest.mark.asyncio
