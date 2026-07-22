@@ -81,7 +81,7 @@ class GeminiQueryPlanner:
 
     async def plan(self, project_id: uuid.UUID, query: str, history: list[ConversationMessage]) -> QueryPlan:
         fallback = _local_query_plan(project_id, query, history)
-        if not self.gateway.client:
+        if not getattr(self.gateway, "is_available", bool(getattr(self.gateway, "client", None))):
             return fallback
         context = _planner_context(history)
         try:
@@ -289,8 +289,8 @@ class GeminiResponder:
     async def rewrite(self, question: str, history: list[ConversationMessage]) -> str:
         if not history:
             return question
-        if not self.gateway.client:
-            raise IngestionError("generation_unavailable", "ATLAS_GEMINI_API_KEY is required for knowledge responses", 503)
+        if not getattr(self.gateway, "is_available", bool(getattr(self.gateway, "client", None))):
+            raise IngestionError("generation_unavailable", "ATLAS_GROQ_API_KEY or ATLAS_GEMINI_API_KEY is required for knowledge responses", 503)
         context = "\n".join(f"{message.role}: {message.content}" for message in history[-6:])
         return await self._complete(
             "Rewrite the latest user question so it is standalone. Preserve intent and do not answer it.",
@@ -308,8 +308,8 @@ class GeminiResponder:
                 confidence=0,
                 status="INSUFFICIENT_EVIDENCE",
             )
-        if not self.gateway.client:
-            raise IngestionError("generation_unavailable", "ATLAS_GEMINI_API_KEY is required for knowledge responses", 503)
+        if not getattr(self.gateway, "is_available", bool(getattr(self.gateway, "client", None))):
+            raise IngestionError("generation_unavailable", "ATLAS_GROQ_API_KEY or ATLAS_GEMINI_API_KEY is required for knowledge responses", 503)
         citation_map = {f"C{index}": chunk for index, chunk in enumerate(context.chunks, start=1)}
         evidence = [
             {
@@ -394,8 +394,6 @@ def build_knowledge_workflow(service: "KnowledgeService"):
     async def route_intent(state: KnowledgeState) -> dict[str, object]:
         started = perf_counter()
         service_name, endpoint = _route_destination(state["query_plan"])
-        if service_name != "knowledge":
-            raise IngestionError("query_routing_required", f"Query is routed to the {service_name} service at {endpoint}", 409)
         return {
             "route_service": service_name,
             "route_endpoint": endpoint,

@@ -97,7 +97,7 @@ class ComplianceExplainer:
         self.gateway = GeminiGateway(settings)
 
     async def explain(self, draft: FindingDraft) -> str:
-        if not self.gateway.client:
+        if not getattr(self.gateway, "is_available", bool(getattr(self.gateway, "client", None))):
             return draft.explanation
         try:
             return await self.gateway.generate(

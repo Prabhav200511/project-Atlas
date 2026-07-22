@@ -15,6 +15,10 @@ class GeminiGateway:
         self.model = settings.chat_model
         self.client = genai.Client(api_key=settings.gemini_api_key).aio if settings.gemini_api_key else None
 
+    @property
+    def is_available(self) -> bool:
+        return bool(self.client or self.settings.groq_api_key)
+
     async def generate(self, instructions: str, content: str, *, json_output: bool = False) -> str:
         if self.settings.groq_api_key:
             return await self._generate_groq(instructions, content, json_output=json_output)

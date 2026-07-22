@@ -115,7 +115,7 @@ class ScheduleNarrator:
         self.gateway = GeminiGateway(settings)
 
     async def enrich(self, risk: ScheduleRisk) -> ScheduleRisk:
-        if not self.gateway.client:
+        if not getattr(self.gateway, "is_available", bool(getattr(self.gateway, "client", None))):
             return risk
         payload = risk.model_dump(mode="json", exclude={"explanation", "mitigation_options", "assumptions", "evidence"})
         try:
