@@ -226,12 +226,12 @@ async def _cleanup_document(session: AsyncSession, qdrant: object, settings: obj
 
     from app.models import (
         CommissioningStep,
-        EquipmentItem,
+        CommissioningTestRecord,
+        ComplianceFinding,
         EvidenceLink,
-        ProcedureStep,
-        RFIAttachment,
-        RFILink,
-        SpecificationRequirement,
+        NonConformance,
+        Requirement,
+        RFI,
     )
     from app.vector import document_filter
 
@@ -245,23 +245,18 @@ async def _cleanup_document(session: AsyncSession, qdrant: object, settings: obj
         pass
     Path(doc.storage_path).unlink(missing_ok=True)
     await session.execute(delete(IngestionJob).where(IngestionJob.document_id == doc.id))
-    await session.execute(
-        delete(SpecificationRequirement).where(
-            (SpecificationRequirement.specification_document_id == doc.id)
-            | (SpecificationRequirement.submittal_document_id == doc.id)
-        )
-    )
-    await session.execute(delete(ProcedureStep).where(ProcedureStep.procedure_document_id == doc.id))
-    await session.execute(delete(RFILink).where(RFILink.document_id == doc.id))
-    await session.execute(
-        delete(CommissioningStep).where(
-            (CommissioningStep.document_id == doc.id) | (CommissioningStep.procedure_document_id == doc.id)
-        )
-    )
-    await session.execute(delete(RFIAttachment).where(RFIAttachment.document_id == doc.id))
     await session.execute(delete(EvidenceLink).where(EvidenceLink.document_id == doc.id))
+    await session.execute(delete(RFI).where(RFI.document_id == doc.id))
+    await session.execute(delete(ScheduleTask).where(ScheduleTask.document_id == doc.id))
+    await session.execute(delete(Requirement).where(Requirement.document_id == doc.id))
+    await session.execute(delete(NonConformance).where(NonConformance.procedure_document_id == doc.id))
+    await session.execute(delete(CommissioningStep).where(CommissioningStep.procedure_document_id == doc.id))
+    await session.execute(delete(CommissioningTestRecord).where(CommissioningTestRecord.procedure_document_id == doc.id))
     await session.execute(
-        update(EquipmentItem).where(EquipmentItem.procedure_document_id == doc.id).values(procedure_document_id=None)
+        delete(ComplianceFinding).where(
+            (ComplianceFinding.specification_document_id == doc.id)
+            | (ComplianceFinding.submittal_document_id == doc.id)
+        )
     )
     await session.delete(doc)
     await session.commit()
