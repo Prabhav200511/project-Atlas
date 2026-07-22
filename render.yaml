@@ -26,6 +26,8 @@ services:
         sync: false
       - key: GROQ_MODEL
         sync: false
+      - key: FAST_RERANK
+        value: "1"
       - key: JWT_SECRET_KEY
         sync: false
       - key: FRONTEND_URL

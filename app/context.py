@@ -77,11 +77,13 @@ class CrossEncoderReranker:
     async def score(self, query: str, texts: list[str]) -> list[float]:
         if not texts:
             return []
+        if os.getenv("FAST_RERANK", "0").lower() in ("1", "true", "yes"):
+            return LexicalReranker().score_sync(query, texts)
         try:
-            scores = await asyncio.to_thread(_predict, self.model_name, query, texts)
+            scores = await asyncio.wait_for(asyncio.to_thread(_predict, self.model_name, query, texts), timeout=8.0)
             return [round(_normalize_score(float(score)), 6) for score in scores]
-        except Exception as exc:
-            logger.warning("cross_encoder_unavailable model=%s error=%s", self.model_name, type(exc).__name__)
+        except (asyncio.TimeoutError, TimeoutError, Exception) as exc:
+            logger.warning("cross_encoder_unavailable model=%s error=%s (falling back to LexicalReranker)", self.model_name, type(exc).__name__)
             return LexicalReranker().score_sync(query, texts)
 
 
