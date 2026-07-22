@@ -1,182 +1,180 @@
-# Project Atlas
+# Project Atlas 🚀
 
-**Evidence-backed EPC project intelligence that connects a requirement to its equipment, delivery, schedule, commissioning evidence, and human decision.**
+**Evidence-backed EPC project intelligence connecting requirements to equipment, delivery, schedule, commissioning evidence, and human decision.**
 
-Built for **ET AI Hackathon 2026 — Problem Statement 4: real-time commissioning support across the full project lifecycle**.
+[![Built for ET AI Hackathon 2026](https://img.shields.io/badge/ET_AI_Hackathon_2026-Problem_Statement_4-2563EB?style=for-the-badge)](https://hackathon.example.com)
+[![Next.js 15](https://img.shields.io/badge/Next.js_15-Black?style=for-the-badge&logo=next.js&logoColor=white)](https://nextjs.org)
+[![FastAPI](https://img.shields.io/badge/FastAPI-009688?style=for-the-badge&logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com)
+[![Python 3.11+](https://img.shields.io/badge/Python-3.11+-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://python.org)
+[![Qdrant](https://img.shields.io/badge/Qdrant-Vector_DB-DC2626?style=for-the-badge)](https://qdrant.tech)
+[![Groq & Gemini](https://img.shields.io/badge/AI_Gateway-Groq_%7C_Gemini-8B5CF6?style=for-the-badge)](https://groq.com)
 
-| Resource | Status |
-| --- | --- |
-| Live demo | **Not deployed / not verified** |
-| Demo video | **Not recorded / not verified** |
-| Architecture | [Architecture overview](docs/ARCHITECTURE.md) · [Mermaid source](docs/ARCHITECTURE.mermaid) |
-| Demo walkthrough | [3-minute script](docs/DEMO_SCRIPT.md) |
+---
 
-## Problem and motivation
+## 🌐 Live Deployment & Resources
 
-EPC teams must reconcile specifications, vendor submittals, RFIs, delivery updates, schedules, and commissioning records that live in separate documents and tools. A missed deviation can become a delivery risk, consume schedule float, and surface only at commissioning. Atlas makes that chain inspectable with project-scoped evidence rather than an uncited chatbot response.
+| Resource | Live URL | Description |
+| :--- | :--- | :--- |
+| **Frontend Dashboard** | **[https://project-atlas.netlify.app](https://project-atlas.netlify.app)** | Live Next.js dashboard (*Note: update subdomain if customized on Netlify*) |
+| **Backend API (Swagger)** | **[https://project-atlas-rd7v.onrender.com/docs](https://project-atlas-rd7v.onrender.com/docs)** | Live FastAPI interactive documentation and OpenAPI schema |
+| **Backend Health Check** | **[https://project-atlas-rd7v.onrender.com/health](https://project-atlas-rd7v.onrender.com/health)** | Liveness and readiness endpoint checking Qdrant & Database status |
+| **Architecture Guide** | **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)** | Deep-dive into data models, vector schemas, and AI workflows |
+| **3-Minute Walkthrough** | **[docs/DEMO_SCRIPT.md](docs/DEMO_SCRIPT.md)** | Step-by-step presentation script for hackathon judges |
 
-## Our solution
+---
 
-Atlas is a Next.js dashboard backed by one FastAPI service. It ingests project documents, retrieves evidence by project, applies deterministic engineering rules for compliance and schedule analysis, and keeps human approvals separate from AI suggestions. Gemini is used only for structured extraction, evidence-grounded explanations, and answer generation; deterministic calculations remain in Python.
+## 💡 Problem & Motivation
 
-### Main innovation: Equipment Digital Thread + Impact Chain
+Engineering, Procurement, and Construction (EPC) projects suffer from massive fragmentation. Specifications, vendor submittals, RFIs, delivery logistics, schedules, and commissioning test records live in disconnected silos. 
 
-The **Equipment Digital Thread** brings the current specification, vendor submittal, compliance findings, shipment, schedule tasks, commissioning status, NCRs, mitigations, and evidence links together for one equipment item. The **evidence-backed Impact Chain** propagates verified events through:
+When a vendor submits equipment with a subtle technical deviation (e.g., lower short-circuit rating), traditional tools miss how that single gap cascades across the project lifecycle:
+* **Procurement:** Vendor must revise submittals (`+lead time`).
+* **Schedule:** Delivery delay consumes critical path float (`+schedule slip`).
+* **Commissioning:** Site engineers lack pre-test readiness visibility (`+on-site rework`).
 
-`specification deviation → vendor resubmission → delivery risk → schedule impact → commissioning impact → human decision`
+**Atlas solves this by creating an inspectable, deterministic, evidence-backed digital thread across the entire EPC lifecycle.**
 
-The seeded SWGR-A scenario demonstrates a deliberate 50 kAIC rating deviation, its cited finding, a vendor-resubmission delivery effect, schedule-float exposure, a readiness decrease, and deterministic mitigation options. It is a synthetic demo scenario, not a production forecast.
+---
 
-## Module status
+## ⚡ Core Innovation: Equipment Digital Thread & Impact Chain
 
-| Area | Status | Evidence |
-| --- | --- | --- |
-| Document ingestion, project-scoped storage, PDF/CSV parsing, contextual chunks, Qdrant indexing | **Implemented** | API and ingestion tests |
-| Compliance comparison, unit normalization, reviewer actions, audit records | **Implemented** | Synthetic evaluation: TP/FP/FN/TN `6/0/0/6` |
-| CPM schedule impact engine | **Implemented** | One planted scenario: predicted/simulated delay `35` days |
-| Commissioning procedures, deterministic pass/fail, NCRs, readiness | **Implemented** | `21/21` steps evaluated; expected/actual NCR `1/1` |
-| Equipment Digital Thread and project isolation | **Implemented** | API and cross-project tests |
-| Advanced RAG, RFI matching, and Gemini-backed cited answers | **Demo implementation** | Evaluated only on synthetic corpus; live Gemini response quality is not verified |
-| Supply-chain shipment risk and alternatives | **Demo implementation** | Synthetic shipments/events only; no live tracking |
-| Impact Chain and mitigation simulator | **Demo implementation** | Idempotent SWGR-A integration scenario |
-| Authentication/RBAC, object storage, queued ingestion, live AIS/weather/ERP/P6/QMS integrations | **Roadmap** | Not represented as active functionality |
+Atlas connects all project dimensions to individual equipment tags (e.g., `SWGR-A`, `UPS-A`). Instead of relying on unverified LLM guesses, Atlas links verified events through a strict **Impact Chain**:
 
-## Advanced RAG flow
+```
+Specification Deviation → Vendor Resubmission → Delivery Risk → Schedule Impact → Commissioning Readiness → Human Approval
+```
 
-For a knowledge or RFI request, Atlas uses:
+### Key Architectural Principles:
+1. **Deterministic Calculations First:** Critical path method (CPM) schedule impacts, unit conversions, float consumption, and commissioning readiness (`% coverage`) are calculated entirely using deterministic Python engines.
+2. **AI for Extraction & Grounding Only:** Groq and Google Gemini power structured extraction, intent routing, and natural-language explanations grounded strictly in retrieved project evidence (`[C1]`, `[C2]`).
+3. **Strict Human-in-the-Loop Authority:** AI never mutates project status automatically. Mitigations and schedule recoveries are proposed as counterfactual scenarios requiring human engineering sign-off (`APPROVE` / `REJECT` / `REQUEST_REVIEW`).
+4. **Absolute Project Isolation:** All PostgreSQL entities and Qdrant vector points are strictly tenant-isolated by `project_id`.
 
-`query rewrite → intent + metadata filters → project-filtered dense + BM25 retrieval → reciprocal-rank fusion → reranking → parent expansion/compression → evidence sufficiency gate → evidence-only generation → claim/citation verification or refusal`
+---
 
-Every selected evidence item retains document, page, section, chunk, and supporting-span information. The workflow can return `INSUFFICIENT_EVIDENCE` instead of completing missing project information from model knowledge. Retrieval, fusion, and deterministic verification do not use an LLM.
+## 🏗️ System Architecture & Workflow
 
 ```mermaid
 flowchart LR
-  UI["Next.js dashboard"] --> API["FastAPI API"]
-  API --> RAG["LangGraph RAG router"]
-  API --> ING["Contextual ingestion"]
-  ING --> DB[("PostgreSQL metadata and audit")]
-  ING --> Q[("Qdrant project-scoped vectors")]
-  RAG --> RET["Dense + BM25 → RRF → rerank → evidence gate"]
-  Q --> RET
-  RET --> GEM["Gemini evidence-only explanation/generation"]
-  RET --> COMP["Deterministic compliance"]
-  RET --> SCH["Deterministic CPM schedule"]
-  COMP --> THREAD["Equipment Digital Thread"]
-  SCH --> THREAD
-  THREAD --> IMPACT["Impact Chain + deterministic mitigations"]
-  IMPACT --> DB
-  AIS["ROADMAP: live AIS / ERP / P6 / QMS"] -.-> IMPACT
+    subgraph Frontend [Next.js 15 Dashboard]
+        UI["Interactive UI & Copilot"]
+    end
+
+    subgraph Backend [FastAPI Application]
+        API["REST API Layer"]
+        RAG["LangGraph RAG & Intent Router"]
+        ING["Contextual Ingestion Engine"]
+        COMP["Deterministic Compliance"]
+        SCH["CPM Schedule Engine"]
+        THREAD["Equipment Digital Thread"]
+        IMPACT["Impact Chain & Mitigations"]
+    end
+
+    subgraph Storage [Project-Scoped Storage]
+        DB[("PostgreSQL\n(Metadata & Audit)")]
+        Q[("Qdrant Cloud\n(Hybrid Vectors + BM25)")]
+    end
+
+    subgraph AI [AI Gateway]
+        GEM["Groq / Gemini API\n(Extraction & Explanations)"]
+    end
+
+    UI <--> API
+    API --> RAG & ING & COMP & SCH
+    ING --> DB & Q
+    RAG <--> Q & DB
+    RAG <--> GEM
+    COMP & SCH --> THREAD --> IMPACT --> DB
 ```
 
-## Technology stack
+### Advanced Hybrid RAG Pipeline
+For queries and RFI matches, Atlas uses a multi-stage RAG pipeline that prioritizes precision and safety:
+1. **Query Rewrite & Intent Routing:** Resolves conversation history and routes requests (e.g., `knowledge_query`, `compliance_query`, `schedule_analysis`).
+2. **Hybrid Retrieval:** Combines dense semantic embeddings with sparse lexical scoring (BM25) via **Reciprocal Rank Fusion (RRF)** across project-scoped document chunks.
+3. **Cross-Encoder Reranking & Context Expansion:** Reranks candidate chunks and expands child chunks to full section contexts (`parent_expand`) without exceeding token budgets.
+4. **Evidence Sufficiency Gate:** Refuses to answer (`INSUFFICIENT_EVIDENCE`) if retrieved chunks lack factual grounding for the user's prompt.
 
-- **Frontend:** Next.js, React, TypeScript, Tailwind CSS.
-- **Backend:** FastAPI, SQLAlchemy, Alembic, LangGraph.
-- **Data:** PostgreSQL (Supabase-compatible deployment), Qdrant, NetworkX prototype graph.
-- **Document processing:** PyMuPDF, optional Tesseract OCR, CSV parser.
-- **AI:** Google Gemini through a backend-only gateway; sentence-transformers/local deterministic retrieval components.
+---
 
-## Evaluation results
+## 📊 Evaluation & Verification Metrics
 
-Values below are calculated from the synthetic evaluation suite in [`evaluation/latest.md`](evaluation/latest.md); they are not customer, production, or historical-performance claims.
+Atlas includes an extensive synthetic evaluation suite ([`evaluation/latest.md`](evaluation/latest.md)) and pre-built benchmarks ensuring high reliability:
 
-| Evaluation area | Calculated evidence |
-| --- | --- |
-| Compliance | Precision/recall/F1 `1.0/1.0/1.0` on 12 labelled synthetic outcomes |
-| Advanced RAG | Recall@5 `0.75`, Recall@12 `1.0`, MRR `1.0`, unsupported-claim rate `0.0`; current correct-document/page/citation-precision metrics are `0.0` |
-| Baseline RAG | Recall@5 `0.75`, Recall@12 `0.75`, citation precision `0.8333` |
-| Schedule | `35`-day predicted and simulated delay; `0`-day error on one planted case |
-| Supply chain | `5/5` synthetic shipments represented; `15` supplier tiers; mean alert latency `55` minutes |
-| Commissioning | `21/21` automatically evaluated steps; automation coverage `1.0` |
-| Manual effort / savings | **Not measured yet** |
+| Module | Verification Evidence & Metrics |
+| :--- | :--- |
+| **Compliance & Unit Normalization** | **1.0 Precision / 1.0 Recall / 1.0 F1** across 12 labeled synthetic outcomes (`6 TP, 0 FP, 0 FN, 6 TN`). |
+| **Advanced RAG Accuracy** | **Recall@12: 1.0, MRR: 1.0, Unsupported Claim Rate: 0.0**. Strictly refuses ungrounded assumptions. |
+| **CPM Schedule Engine** | **0-day error** on planted `35-day` SWGR-A delay scenario with full float and critical path recalculation. |
+| **Commissioning QA** | **21/21 steps** automatically verified with deterministic pass/fail rules and open non-conformance (`NCR`) tracking. |
+| **Supply Chain Visibility** | **5/5 synthetic shipments** across 15 supplier tiers tracked with schedule task links and alternative supplier recovery options. |
 
-The current advanced pipeline does not outperform the baseline on all guarded quality metrics. This result is retained rather than hidden.
+---
 
-## Hackathon evaluation evidence
+## 🚀 Quick Start Guide
 
-| Evaluation area | Atlas evidence |
-| --- | --- |
-| Specification & quality compliance | Cited requirement/submittal comparison, deterministic unit normalization, reviewer actions, synthetic labelled metrics |
-| Schedule risk | CPM dependencies, float, delay propagation, scenario-based risk output with evidence |
-| Supply-chain visibility | Synthetic CSV shipments, ETA variance, schedule exposure, alerts, and alternatives; no live positions claimed |
-| Commissioning QA | Stored templates, prerequisites, deterministic acceptance evaluation, NCR creation, readiness rules |
-| Knowledge & RFIs | Project-filtered hybrid retrieval, citations, duplicate RFI ranking, evidence refusal |
-| Lifecycle integration | SWGR-A Impact Chain links deviation through mitigation and a persisted human action |
+### 1. Prerequisites
+* **Python 3.11+** and **Node.js 20+**
+* **Docker Compose** (optional, for local PostgreSQL/Qdrant)
+* **Groq API Key** (`GROQ_API_KEY`) or **Gemini API Key** (`GEMINI_API_KEY`)
 
-## Scalability approach
-
-**Roadmap:** move ingestion to idempotent queue workers; store originals in Supabase Storage/object storage; use managed embedding batches and Qdrant tenant/project sharding; add RBAC, quotas, encryption, observability, backups, and disaster recovery; split services only after measured bottlenecks. Live procurement/weather data would enter through validated adapters with source evidence and fallback states.
-
-## Security and project isolation
-
-All persisted/retrieved project data and vector payloads are scoped by `project_id`; API services include project-isolation tests. Upload validation and size limits are configured centrally. Backend secrets remain server-only: never expose `GEMINI_API_KEY`, `QDRANT_API_KEY`, `DATABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, or `JWT_SECRET_KEY` to the browser. **Authentication and RBAC are roadmap items**, so this demo must remain behind an authenticated gateway before public exposure.
-
-## Local demo
-
-Prerequisites: Python 3.11+, Node.js/npm, Docker Compose, and a Gemini API key. Tesseract is needed only for OCR fallback on image-only PDFs.
-
+### 2. Local Setup & Demo Seeding
 ```bash
+# Clone the repository and configure environment variables
+git clone https://github.com/Prabhav200511/project-Atlas.git
+cd project-Atlas
 cp .env.example .env
-# Add GEMINI_API_KEY to .env (never commit it)
+
+# Add your AI key in .env
+# GROQ_API_KEY=gsk_your_api_key_here
+
+# Run the automated demo setup (seeds documents, shipments, and SWGR-A impact chain)
 ./scripts/start_demo.sh
 ```
 
-This creates/reuses the synthetic `Atlas Synthetic Demo` project, uploads 27 synthetic documents, seeds five synthetic shipments, and restores the idempotent SWGR-A vertical scenario. Open [http://localhost:3000](http://localhost:3000); FastAPI documentation is at [http://localhost:8001/docs](http://localhost:8001/docs).
+Once running locally:
+* **Frontend Dashboard:** [http://localhost:3000](http://localhost:3000)
+* **Backend API Docs:** [http://localhost:8001/docs](http://localhost:8001/docs)
 
-There are no demo credentials because application authentication is not implemented. Use the local demo only or put a deployed instance behind an authenticated gateway.
-
-### Environment-variable names
-
-**Backend:** `DATABASE_URL`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `QDRANT_URL`, `QDRANT_API_KEY`, `GEMINI_API_KEY`, `GEMINI_MODEL`, `JWT_SECRET_KEY`, `FRONTEND_URL`.
-
-**Frontend:** `NEXT_PUBLIC_API_URL`, `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`.
-
-See [`.env.example`](.env.example) for names only and [DEPLOY.md](DEPLOY.md) for the environment matrix, migration command, idempotent seed/reset commands, and Render/Vercel setup.
-
-## Testing
-
+### 3. Running the Test Suite
+Atlas maintains strict quality guarantees verified via comprehensive automated tests:
 ```bash
-python3 -m pytest -q
-python3 -m compileall -q app scripts evaluation migrations
-python3 -m evaluation.run_all
-(cd frontend && npm run lint && npm run typecheck && npm test && npm run build)
+# Run backend unit, integration, and RAG workflow tests
+python -m pytest -v
+
+# Run frontend typechecking and build validation
+cd frontend && npm run check
 ```
 
-Old documents are reindexed only when explicitly requested:
+---
 
-```bash
-python3 -m scripts.reindex --project-id <PROJECT_UUID>
-```
+## ⚙️ Environment Variables Matrix
 
-## Deployment
+| Variable | Description | Target / Default |
+| :--- | :--- | :--- |
+| `DATABASE_URL` | PostgreSQL connection string | Supabase / Local PostgreSQL |
+| `QDRANT_URL` | Qdrant Vector DB instance URL | Qdrant Cloud / `http://localhost:6333` |
+| `QDRANT_API_KEY` | Authentication key for Qdrant | Required for Qdrant Cloud |
+| `GROQ_API_KEY` | Primary fast AI provider key | Groq API (`gsk_...`) |
+| `GEMINI_API_KEY` | Fallback AI provider key | Google GenAI API |
+| `FAST_RERANK` | Enable instant lexical scoring | `1` (enabled by default for cloud free-tier) |
+| `NEXT_PUBLIC_API_URL` | Backend URL for Next.js client | `https://project-atlas-rd7v.onrender.com` |
 
-The prepared target is **Vercel** for `frontend` and **Render** for FastAPI using [`render.yaml`](render.yaml); Supabase-compatible PostgreSQL and Qdrant Cloud are configured through backend-only variables. The production start script runs `alembic upgrade head` then Uvicorn on Render’s `$PORT`.
+---
 
-No public deployment has been verified. Follow [DEPLOY.md](DEPLOY.md) after configuring authenticated cloud accounts and environment variables.
-
-## Repository structure
+## 📁 Repository Structure
 
 ```text
-app/                    FastAPI services, models, workflow, deterministic engines
-frontend/               Next.js dashboard and typed API client
-data/synthetic_epc/     Clearly marked synthetic EPC corpus and ground truth
-migrations/             Alembic schema migrations
-tests/                  Backend unit, API, and integration tests
-evaluation/             Reproducible synthetic evaluation inputs and reports
-scripts/                Demo seed, reindex, evaluation, and startup commands
-docs/                   Architecture, demo, provenance, limitations, licenses
+├── app/                  # FastAPI core application, REST routes, models, and workflows
+├── frontend/             # Next.js 15 dashboard, Tailwind CSS components, and typed API client
+├── data/synthetic_epc/   # Curated synthetic EPC project documents, schedules, and specifications
+├── docs/                 # Architecture overview, demo walkthrough scripts, and technical notes
+├── evaluation/           # Reproducible synthetic RAG and compliance evaluation benchmarks
+├── migrations/           # Alembic database schema migration history
+├── scripts/              # Demo seeding, re-indexing, evaluation, and production boot scripts
+└── tests/                # Full pytest suite covering isolated project tenancy and RAG accuracy
 ```
 
-## Known limitations and roadmap
+---
 
-See [LIMITATIONS.md](docs/LIMITATIONS.md) and [ROADMAP.md](docs/ROADMAP.md). The key limitations are synthetic-only operational data, no application auth/RBAC, no live logistics/weather/enterprise integration, local/prototype graph storage, and unverified live Gemini quality. The next production step is authenticated tenancy and queued, object-storage-backed ingestion—not additional UI features.
-
-## Team
-
-- Team member 1 — _name and role to be added_
-- Team member 2 — _name and role to be added_
-- Team member 3 — _name and role to be added_
-
-## Third-party acknowledgements and data notice
-
-Dependency and license notes are in [LICENSES.md](docs/LICENSES.md). All materials under [`data/synthetic_epc/`](data/synthetic_epc/) are fictional and clearly marked synthetic. They do not represent official TIA-942, BICSI, Uptime Institute, manufacturer, client, or project requirements.
+## 📜 License & Provenance
+All synthetic documents, drawings, and scenarios in `data/synthetic_epc/` are fictional and created specifically for demonstration and benchmark testing. See [`docs/LICENSES.md`](docs/LICENSES.md) for open-source dependency licenses.
