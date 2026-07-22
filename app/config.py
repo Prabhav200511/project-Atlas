@@ -16,6 +16,8 @@ class Settings(BaseSettings):
     qdrant_url: str = Field(default="http://localhost:6333", validation_alias=AliasChoices("QDRANT_URL", "ATLAS_QDRANT_URL"))
     qdrant_api_key: str | None = Field(default=None, repr=False, validation_alias=AliasChoices("QDRANT_API_KEY", "ATLAS_QDRANT_API_KEY"))
     gemini_api_key: str | None = Field(default=None, repr=False, validation_alias=AliasChoices("GEMINI_API_KEY", "ATLAS_GEMINI_API_KEY"))
+    groq_api_key: str | None = Field(default=None, repr=False, validation_alias=AliasChoices("GROQ_API_KEY", "ATLAS_GROQ_API_KEY"))
+    groq_model: str = Field(default="llama-3.3-70b-versatile", validation_alias=AliasChoices("GROQ_MODEL", "ATLAS_GROQ_MODEL"))
     jwt_secret_key: str | None = Field(default=None, repr=False, validation_alias=AliasChoices("JWT_SECRET_KEY", "ATLAS_JWT_SECRET_KEY"))
     embedding_dimensions: int = 1536
     qdrant_collection: str = "atlas_chunks"
@@ -44,7 +46,7 @@ class Settings(BaseSettings):
     def allowed_cors_origins(self) -> list[str]:
         return [origin.strip().rstrip("/") for origin in self.cors_origins.split(",") if origin.strip()]
 
-    @field_validator("qdrant_api_key", "gemini_api_key", mode="before")
+    @field_validator("qdrant_api_key", "gemini_api_key", "groq_api_key", mode="before")
     @classmethod
     def blank_secret_is_unset(cls, value: str | None) -> str | None:
         return value or None
