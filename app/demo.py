@@ -198,4 +198,9 @@ async def seed_vertical_demo(
 
 
 async def _document(session: AsyncSession, project_id: uuid.UUID, filename: str) -> Document | None:
-    return await session.scalar(select(Document).where(Document.project_id == project_id, Document.filename == filename))
+    return await session.scalar(
+        select(Document)
+        .where(Document.project_id == project_id, Document.filename == filename, Document.status == "completed")
+        .order_by(Document.created_at.desc())
+        .limit(1)
+    )

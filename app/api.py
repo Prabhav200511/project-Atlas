@@ -220,6 +220,53 @@ async def _latest_job(session: AsyncSession, project_id: uuid.UUID, document_id:
     return job
 
 
+async def _cleanup_document(session: AsyncSession, qdrant: object, settings: object, doc: Document) -> None:
+    from qdrant_client.models import FilterSelector
+    from sqlalchemy import delete, update
+
+    from app.models import (
+        CommissioningStep,
+        EquipmentItem,
+        EvidenceLink,
+        ProcedureStep,
+        RFIAttachment,
+        RFILink,
+        SpecificationRequirement,
+    )
+    from app.vector import document_filter
+
+    try:
+        await qdrant.delete(
+            collection_name=settings.qdrant_collection,
+            points_selector=FilterSelector(filter=document_filter(doc.project_id, doc.id)),
+            wait=True,
+        )
+    except Exception:
+        pass
+    Path(doc.storage_path).unlink(missing_ok=True)
+    await session.execute(delete(IngestionJob).where(IngestionJob.document_id == doc.id))
+    await session.execute(
+        delete(SpecificationRequirement).where(
+            (SpecificationRequirement.specification_document_id == doc.id)
+            | (SpecificationRequirement.submittal_document_id == doc.id)
+        )
+    )
+    await session.execute(delete(ProcedureStep).where(ProcedureStep.procedure_document_id == doc.id))
+    await session.execute(delete(RFILink).where(RFILink.document_id == doc.id))
+    await session.execute(
+        delete(CommissioningStep).where(
+            (CommissioningStep.document_id == doc.id) | (CommissioningStep.procedure_document_id == doc.id)
+        )
+    )
+    await session.execute(delete(RFIAttachment).where(RFIAttachment.document_id == doc.id))
+    await session.execute(delete(EvidenceLink).where(EvidenceLink.document_id == doc.id))
+    await session.execute(
+        update(EquipmentItem).where(EquipmentItem.procedure_document_id == doc.id).values(procedure_document_id=None)
+    )
+    await session.delete(doc)
+    await session.commit()
+
+
 @router.post("", response_model=ProjectResponse, status_code=201)
 async def create_project(payload: ProjectCreate, session: AsyncSession = Depends(get_session)) -> ProjectResponse:
     project = Project(name=payload.name)
@@ -260,11 +307,19 @@ async def upload_document(
     filename = Path(file.filename or "").name
     validate_upload(filename, document_type, len(content), request.app.state.settings)
     content_sha256 = file_hash(content)
-    duplicate = await session.scalar(
-        select(Document).where(Document.project_id == project_id, Document.content_sha256 == content_sha256)
-    )
-    if duplicate:
-        raise HTTPException(409, "An identical document already exists in this project")
+    existing_docs = (
+        await session.scalars(
+            select(Document).where(
+                Document.project_id == project_id,
+                (Document.content_sha256 == content_sha256) | (Document.filename == filename),
+            )
+        )
+    ).all()
+    for existing_doc in existing_docs:
+        if existing_doc.status != "completed" or not Path(existing_doc.storage_path).exists():
+            await _cleanup_document(session, request.app.state.qdrant, request.app.state.settings, existing_doc)
+        elif existing_doc.content_sha256 == content_sha256:
+            raise HTTPException(409, "An identical document already exists in this project")
     document_id = uuid.uuid4()
     upload_path = Path(request.app.state.settings.upload_dir) / str(project_id) / str(document_id) / filename
     upload_path.parent.mkdir(parents=True, exist_ok=True)

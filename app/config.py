@@ -36,7 +36,7 @@ class Settings(BaseSettings):
     max_upload_bytes: int = 50 * 1024 * 1024
     min_pdf_text_chars: int = 80
     auto_create_schema: bool = False
-    chat_model: str = Field(default="gemini-2.5-flash", validation_alias=AliasChoices("GEMINI_MODEL", "ATLAS_CHAT_MODEL"))
+    chat_model: str = Field(default="gemini-2.0-flash", validation_alias=AliasChoices("GEMINI_MODEL", "ATLAS_CHAT_MODEL"))
     rfi_similarity_threshold: float = 0.75
     graph_dir: str = "./graphs"
 

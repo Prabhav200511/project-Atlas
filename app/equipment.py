@@ -287,7 +287,7 @@ def _row(item) -> dict[str, Any]:
 
 
 def _current_document(documents: list[Document], document_type: str) -> DocumentThreadItem | None:
-    candidates = [item for item in documents if item.document_type == document_type]
+    candidates = [item for item in documents if item.document_type == document_type and item.status == "completed"]
     if not candidates:
         return None
     approved = {"approved", "current", "ifc", "issued for bid", "issued for construction", "answered"}
