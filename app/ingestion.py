@@ -357,6 +357,30 @@ async def ensure_collection(client: AsyncQdrantClient, settings: Settings) -> No
             collection_name=settings.qdrant_collection,
             vectors_config=VectorParams(size=settings.embedding_dimensions, distance=Distance.COSINE),
         )
+    # Ensure payload indexes exist for all filtered fields (required by Qdrant Cloud)
+    indexed_fields = [
+        ("project_id", "keyword"),
+        ("document_id", "keyword"),
+        ("document_type", "keyword"),
+        ("record_type", "keyword"),
+        ("parent_id", "keyword"),
+        ("equipment_tags", "keyword"),
+        ("vendor", "keyword"),
+        ("rfi_status", "keyword"),
+        ("revision_status", "keyword"),
+        ("section", "keyword"),
+        ("index_version", "keyword"),
+    ]
+    for field_name, field_schema in indexed_fields:
+        try:
+            await client.create_payload_index(
+                collection_name=settings.qdrant_collection,
+                field_name=field_name,
+                field_schema=field_schema,
+                wait=False,
+            )
+        except Exception:
+            pass  # Index already exists or non-critical
 
 
 async def index_chunks(
