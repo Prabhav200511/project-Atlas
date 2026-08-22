@@ -4,22 +4,142 @@ from pathlib import Path
 
 import pytest
 from qdrant_client import AsyncQdrantClient
-from qdrant_client.models import Distance, PointStruct, VectorParams
+from qdrant_client.models import Distance, PointStruct, SparseVectorParams, VectorParams
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from app.config import Settings
-from app.ingestion import Chunk, _bm25_rank, chunk_document, extract_document, extract_metadata, index_chunks, reindex_documents, retrieve_chunks
+from app.errors import IngestionError
+from app.ingestion import (
+    Chunk,
+    _bm25_rank,
+    chunk_document,
+    ensure_collection,
+    extract_document,
+    extract_metadata,
+    index_chunks,
+    reindex_documents,
+    retrieve_chunks,
+)
 from app.models import Base, Document, Project
 from app.vector import document_filter
 
 
 class CapturingEmbedder:
-    def __init__(self) -> None:
-        self.inputs: list[str] = []
+    dimensions = 2
 
-    async def embed(self, texts: list[str]) -> list[list[float]]:
-        self.inputs.extend(texts)
+    def __init__(self) -> None:
+        self.document_calls: list[list[str]] = []
+        self.query_calls: list[list[str]] = []
+
+    async def embed_documents(self, texts: list[str]) -> list[list[float]]:
+        self.document_calls.append(texts)
         return [[1.0, 0.0] for _ in texts]
+
+    async def embed_queries(self, texts: list[str]) -> list[list[float]]:
+        self.query_calls.append(texts)
+        return [[1.0, 0.0] for _ in texts]
+
+
+@pytest.mark.asyncio
+async def test_existing_collection_dimension_mismatch_is_rejected() -> None:
+    client = AsyncQdrantClient(location=":memory:", check_compatibility=False)
+    await client.create_collection("semantic", vectors_config=VectorParams(size=2, distance=Distance.COSINE))
+    settings = Settings(qdrant_collection="semantic", embedding_dimensions=384)
+
+    try:
+        with pytest.raises(IngestionError) as error:
+            await ensure_collection(client, settings)
+
+        assert error.value.code == "embedding_index_mismatch"
+        assert error.value.details == {
+            "collection": "semantic",
+            "expected_dimensions": 384,
+            "actual_dimensions": 2,
+            "expected_distance": "Cosine",
+            "actual_distance": "Cosine",
+        }
+        info = await client.get_collection("semantic")
+        assert info.config.params.vectors.size == 2
+    finally:
+        await client.close()
+
+
+@pytest.mark.asyncio
+async def test_existing_collection_distance_mismatch_is_rejected_with_distances() -> None:
+    client = AsyncQdrantClient(location=":memory:", check_compatibility=False)
+    await client.create_collection("distance", vectors_config=VectorParams(size=2, distance=Distance.DOT))
+    settings = Settings(qdrant_collection="distance", embedding_dimensions=2)
+
+    try:
+        with pytest.raises(IngestionError) as error:
+            await ensure_collection(client, settings)
+
+        assert error.value.code == "embedding_index_mismatch"
+        assert error.value.details == {
+            "collection": "distance",
+            "expected_dimensions": 2,
+            "actual_dimensions": 2,
+            "expected_distance": "Cosine",
+            "actual_distance": "Dot",
+        }
+        info = await client.get_collection("distance")
+        assert info.config.params.vectors.distance == Distance.DOT
+    finally:
+        await client.close()
+
+
+@pytest.mark.asyncio
+async def test_existing_named_vector_collection_is_rejected_with_shape_details() -> None:
+    client = AsyncQdrantClient(location=":memory:", check_compatibility=False)
+    await client.create_collection(
+        "named",
+        vectors_config={"content": VectorParams(size=2, distance=Distance.COSINE)},
+    )
+    settings = Settings(qdrant_collection="named", embedding_dimensions=2)
+
+    try:
+        with pytest.raises(IngestionError) as error:
+            await ensure_collection(client, settings)
+
+        assert error.value.code == "embedding_index_mismatch"
+        assert error.value.details == {
+            "collection": "named",
+            "expected_vector_configuration": "unnamed",
+            "actual_vector_configuration": "named",
+            "actual_vector_names": ["content"],
+        }
+        info = await client.get_collection("named")
+        assert list(info.config.params.vectors) == ["content"]
+    finally:
+        await client.close()
+
+
+@pytest.mark.asyncio
+async def test_existing_sparse_only_collection_is_rejected_with_shape_details() -> None:
+    client = AsyncQdrantClient(location=":memory:", check_compatibility=False)
+    await client.create_collection(
+        "sparse",
+        vectors_config=None,
+        sparse_vectors_config={"text": SparseVectorParams()},
+    )
+    settings = Settings(qdrant_collection="sparse", embedding_dimensions=2)
+
+    try:
+        with pytest.raises(IngestionError) as error:
+            await ensure_collection(client, settings)
+
+        assert error.value.code == "embedding_index_mismatch"
+        assert error.value.details == {
+            "collection": "sparse",
+            "expected_vector_configuration": "unnamed",
+            "actual_vector_configuration": "sparse_only",
+            "actual_sparse_vector_names": ["text"],
+        }
+        info = await client.get_collection("sparse")
+        assert info.config.params.vectors == {}
+        assert list(info.config.params.sparse_vectors) == ["text"]
+    finally:
+        await client.close()
 
 
 @pytest.mark.asyncio
@@ -100,7 +220,8 @@ async def test_contextual_index_returns_original_text_and_persists_parent() -> N
         "Document: UPS Specification\nType: specification\nEquipment: UPS-A\nRevision: B\n"
         f"Section: 2.2 Battery\nPage: 2\n\n{table}"
     )
-    assert embedder.inputs[0] == expected_context
+    assert embedder.document_calls[0] == [expected_context]
+    assert embedder.query_calls == [["Battery autonomy"]]
     assert child["original_text"] == table
     assert child["contextual_text"] == expected_context
     assert child["vendor_ids"] == ["ApexPower"]
@@ -125,7 +246,7 @@ async def test_non_contextual_evaluation_mode_embeds_original_text() -> None:
     finally:
         await client.close()
 
-    assert embedder.inputs == [chunk.text]
+    assert embedder.document_calls == [[chunk.text]]
 
 
 @pytest.mark.asyncio

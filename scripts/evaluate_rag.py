@@ -131,7 +131,7 @@ async def build_index(
 
 
 async def dense_retrieve(client, embedder, settings, project_id, query, limit=5) -> list[RetrievalResult]:
-    vector = (await embedder.embed([query]))[0]
+    vector = (await embedder.embed_queries([query]))[0]
     response = await client.query_points(
         collection_name=settings.qdrant_collection,
         query=vector,

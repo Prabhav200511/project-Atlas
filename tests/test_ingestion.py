@@ -31,7 +31,16 @@ DATASET = Path(__file__).parents[1] / "data" / "synthetic_epc"
 
 
 class FakeEmbedder:
-    async def embed(self, texts: list[str]) -> list[list[float]]:
+    dimensions = 8
+
+    async def embed_documents(self, texts: list[str]) -> list[list[float]]:
+        terms = ["ups", "switchgear", "clearance", "delivery", "battery", "autonomy", "louvre", "crac"]
+        return [
+            [float(term in text.lower()) for term in terms]
+            for text in texts
+        ]
+
+    async def embed_queries(self, texts: list[str]) -> list[list[float]]:
         terms = ["ups", "switchgear", "clearance", "delivery", "battery", "autonomy", "louvre", "crac"]
         return [
             [float(term in text.lower()) for term in terms]
@@ -40,7 +49,12 @@ class FakeEmbedder:
 
 
 class FailingEmbedder:
-    async def embed(self, texts: list[str]) -> list[list[float]]:
+    dimensions = 8
+
+    async def embed_documents(self, texts: list[str]) -> list[list[float]]:
+        raise IngestionError("embedding_unavailable", "Synthetic embedding outage", 503)
+
+    async def embed_queries(self, texts: list[str]) -> list[list[float]]:
         raise IngestionError("embedding_unavailable", "Synthetic embedding outage", 503)
 
 
@@ -78,8 +92,8 @@ def settings(tmp_path: Path) -> Settings:
 async def test_local_hash_embedder_is_deterministic(tmp_path: Path) -> None:
     embedder = LocalHashEmbedder(settings(tmp_path))
 
-    first = await embedder.embed(["UPS battery autonomy"])
-    second = await embedder.embed(["UPS battery autonomy"])
+    first = await embedder.embed_documents(["UPS battery autonomy"])
+    second = await embedder.embed_queries(["UPS battery autonomy"])
 
     assert first == second
     assert len(first[0]) == 8

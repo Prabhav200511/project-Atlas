@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING, Literal
 import fitz
 from pydantic import BaseModel, Field
 from qdrant_client import AsyncQdrantClient
+from qdrant_client.http.exceptions import UnexpectedResponse
 from qdrant_client.models import Distance, FilterSelector, PointStruct, VectorParams
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -48,14 +49,11 @@ class LocalHashEmbedder:
     def __init__(self, settings: Settings) -> None:
         self.dimensions = settings.embedding_dimensions
 
-    async def embed(self, texts: list[str]) -> list[list[float]]:
+    async def embed_documents(self, texts: list[str]) -> list[list[float]]:
         return [_hash_embedding(text, self.dimensions) for text in texts]
 
-    async def embed_documents(self, texts: list[str]) -> list[list[float]]:
-        return await self.embed(texts)
-
     async def embed_queries(self, texts: list[str]) -> list[list[float]]:
-        return await self.embed(texts)
+        return [_hash_embedding(text, self.dimensions) for text in texts]
 
 
 def _hash_embedding(text: str, dimensions: int) -> list[float]:
@@ -353,6 +351,44 @@ async def ensure_collection(client: AsyncQdrantClient, settings: Settings) -> No
             collection_name=settings.qdrant_collection,
             vectors_config=VectorParams(size=settings.embedding_dimensions, distance=Distance.COSINE),
         )
+    else:
+        info = await client.get_collection(settings.qdrant_collection)
+        vectors = info.config.params.vectors
+        if not isinstance(vectors, VectorParams):
+            sparse_vectors = info.config.params.sparse_vectors or {}
+            if not vectors:
+                details = {
+                    "collection": settings.qdrant_collection,
+                    "expected_vector_configuration": "unnamed",
+                    "actual_vector_configuration": "sparse_only" if sparse_vectors else "none",
+                    "actual_sparse_vector_names": sorted(sparse_vectors),
+                }
+            else:
+                details = {
+                    "collection": settings.qdrant_collection,
+                    "expected_vector_configuration": "unnamed",
+                    "actual_vector_configuration": "named",
+                    "actual_vector_names": sorted(vectors),
+                }
+            raise IngestionError(
+                "embedding_index_mismatch",
+                "Qdrant collection must use an unnamed vector configuration",
+                500,
+                details,
+            )
+        if vectors.size != settings.embedding_dimensions or vectors.distance != Distance.COSINE:
+            raise IngestionError(
+                "embedding_index_mismatch",
+                "Qdrant collection configuration does not match the configured semantic model",
+                500,
+                {
+                    "collection": settings.qdrant_collection,
+                    "expected_dimensions": settings.embedding_dimensions,
+                    "actual_dimensions": vectors.size,
+                    "expected_distance": Distance.COSINE.value,
+                    "actual_distance": vectors.distance.value,
+                },
+            )
     # Ensure payload indexes exist for all filtered fields (required by Qdrant Cloud)
     indexed_fields = [
         ("project_id", "keyword"),
@@ -375,8 +411,11 @@ async def ensure_collection(client: AsyncQdrantClient, settings: Settings) -> No
                 field_schema=field_schema,
                 wait=False,
             )
-        except Exception:
-            pass  # Index already exists or non-critical
+        except UnexpectedResponse as exc:
+            if exc.status_code != 409:
+                logger.exception("Unable to create Qdrant payload index", extra={"field_name": field_name})
+                raise
+            logger.debug("Qdrant payload index already exists", extra={"field_name": field_name})
 
 
 async def index_chunks(
@@ -390,7 +429,7 @@ async def index_chunks(
     await ensure_collection(client, settings)
     for chunk in chunks:
         chunk.attributes = {**(chunk.attributes or {}), "index_version": settings.index_version}
-    vectors = await embedder.embed([chunk.contextual_text() if contextual else chunk.text for chunk in chunks])
+    vectors = await embedder.embed_documents([chunk.contextual_text() if contextual else chunk.text for chunk in chunks])
     if len(vectors) != len(chunks) or any(len(vector) != settings.embedding_dimensions for vector in vectors):
         raise IngestionError("invalid_embedding", "Embedding response did not match the configured dimensions", 502)
     await client.delete(
@@ -438,7 +477,7 @@ async def retrieve_chunks(
     rfi_status: str | None = None,
     query_plan: "QueryPlan | None" = None,
 ) -> list[RetrievalResult]:
-    vector = (await embedder.embed([query]))[0]
+    vector = (await embedder.embed_queries([query]))[0]
     filters = _retrieval_filters(project_id, document_type, rfi_status, query_plan)
     response = await client.query_points(
         collection_name=settings.qdrant_collection,

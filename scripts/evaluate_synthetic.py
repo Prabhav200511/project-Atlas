@@ -32,9 +32,13 @@ RFI_K = 5
 
 
 class SyntheticEmbedder:
+    dimensions = 8
     terms = ("ups", "switchgear", "clearance", "delivery", "battery", "autonomy", "louvre", "crac")
 
-    async def embed(self, texts: list[str]) -> list[list[float]]:
+    async def embed_documents(self, texts: list[str]) -> list[list[float]]:
+        return [[float(term in text.lower()) for term in self.terms] for text in texts]
+
+    async def embed_queries(self, texts: list[str]) -> list[list[float]]:
         return [[float(term in text.lower()) for term in self.terms] for text in texts]
 
 

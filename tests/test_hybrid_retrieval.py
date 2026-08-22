@@ -9,8 +9,29 @@ from app.workflow import QueryPlan
 
 
 class Embedder:
-    async def embed(self, texts: list[str]) -> list[list[float]]:
+    dimensions = 2
+
+    async def embed_documents(self, texts: list[str]) -> list[list[float]]:
         return [[float("ups" in text.lower()), float("switchgear" in text.lower())] for text in texts]
+
+    async def embed_queries(self, texts: list[str]) -> list[list[float]]:
+        return [[float("ups" in text.lower()), float("switchgear" in text.lower())] for text in texts]
+
+
+class CapturingEmbedder:
+    dimensions = 2
+
+    def __init__(self) -> None:
+        self.document_calls: list[list[str]] = []
+        self.query_calls: list[list[str]] = []
+
+    async def embed_documents(self, texts: list[str]) -> list[list[float]]:
+        self.document_calls.append(texts)
+        return [[1.0, 0.0] for _ in texts]
+
+    async def embed_queries(self, texts: list[str]) -> list[list[float]]:
+        self.query_calls.append(texts)
+        return [[1.0, 0.0] for _ in texts]
 
 
 def payload(chunk_id: str, project_id: uuid.UUID, document_id: uuid.UUID, text: str) -> dict[str, object]:
@@ -67,6 +88,34 @@ def test_weighted_rrf_can_prefer_lexical_exact_match() -> None:
     )
 
     assert results[0].chunk_id == "lexical"
+
+
+@pytest.mark.asyncio
+async def test_indexing_uses_document_encoder_and_retrieval_uses_query_encoder() -> None:
+    client = AsyncQdrantClient(location=":memory:", check_compatibility=False)
+    config = Settings(embedding_dimensions=2, qdrant_collection="encoder_selection")
+    embedder = CapturingEmbedder()
+    project_id, document_id = uuid.uuid4(), uuid.uuid4()
+    chunk = Chunk(
+        project_id,
+        document_id,
+        "specification",
+        "ups.md",
+        1,
+        "2.2",
+        0,
+        "UPS-A battery autonomy.",
+        {"document_title": "UPS Specification"},
+    )
+    query = "UPS autonomy"
+    try:
+        await index_chunks(client, embedder, config, [chunk])
+        await retrieve_chunks(client, embedder, config, project_id, query, 1)
+    finally:
+        await client.close()
+
+    assert embedder.document_calls == [[chunk.contextual_text()]]
+    assert embedder.query_calls == [[query]]
 
 
 @pytest.mark.asyncio
