@@ -11,15 +11,17 @@
 
 ---
 
-## 🌐 Live Deployment & Resources
+## 🌐 Deployment Targets & Resources
 
-| Resource | Live URL | Description |
+| Resource | Configured target | Verification status (2026-08-22) |
 | :--- | :--- | :--- |
-| **Frontend Dashboard** | **[https://project-atlas.netlify.app](https://project-atlas.netlify.app)** | Live Next.js dashboard (*Note: update subdomain if customized on Netlify*) |
-| **Backend API (Swagger)** | **[https://project-atlas-rd7v.onrender.com/docs](https://project-atlas-rd7v.onrender.com/docs)** | Live FastAPI interactive documentation and OpenAPI schema |
-| **Backend Health Check** | **[https://project-atlas-rd7v.onrender.com/health](https://project-atlas-rd7v.onrender.com/health)** | Liveness and readiness endpoint checking Qdrant & Database status |
+| **Frontend Dashboard** | **[https://project-atlas.netlify.app](https://project-atlas.netlify.app)** | **NOT VERIFIED.** The URL returned HTTP 200 but served an unrelated climate-awareness “Project ATLAS” site (Droughts/Flooding/Global Warming), not this EPC dashboard. |
+| **Backend API (Swagger)** | **[https://project-atlas-rd7v.onrender.com/docs](https://project-atlas-rd7v.onrender.com/docs)** | **BLOCKED.** The configured Render target has not returned an HTTP response; do not treat its Swagger UI as available. |
+| **Backend health/readiness** | **[https://project-atlas-rd7v.onrender.com/health](https://project-atlas-rd7v.onrender.com/health)** and **[/ready](https://project-atlas-rd7v.onrender.com/ready)** | **BLOCKED.** Both probes timed out after 60 seconds; a bounded `/health` curl timed out after 120.011 seconds with HTTP `000` and zero bytes. DNS resolution and TCP 443 succeeded, so the service accepted a connection without producing an HTTP response. |
 | **Architecture Guide** | **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)** | Deep-dive into data models, vector schemas, and AI workflows |
 | **3-Minute Walkthrough** | **[docs/DEMO_SCRIPT.md](docs/DEMO_SCRIPT.md)** | Step-by-step presentation script for hackathon judges |
+
+The local configuration and build gates are passing (backend: 101 passed, 3 warnings; frontend: 9 passed; lint, typecheck, and production build passed), but those results do not verify either configured deployment target. Production seeding/re-upload and Copilot/RFI smoke tests remain deferred until deployment remediation is complete.
 
 ---
 
@@ -101,12 +103,12 @@ For queries and RFI matches, Atlas uses a multi-stage RAG pipeline that prioriti
 
 ## 📊 Evaluation & Verification Metrics
 
-Atlas includes an extensive synthetic evaluation suite ([`evaluation/latest.md`](evaluation/latest.md)) and pre-built benchmarks ensuring high reliability:
+Atlas includes an extensive synthetic evaluation suite ([`evaluation/latest.md`](evaluation/latest.md)). The values below are the current checked-in, pre-semantic snapshot; they are not final semantic-runtime or production measurements, both of which are deferred.
 
 | Module | Verification Evidence & Metrics |
 | :--- | :--- |
 | **Compliance & Unit Normalization** | **1.0 Precision / 1.0 Recall / 1.0 F1** across 12 labeled synthetic outcomes (`6 TP, 0 FP, 0 FN, 6 TN`). |
-| **Advanced RAG Accuracy** | **Recall@12: 1.0, MRR: 1.0, Unsupported Claim Rate: 0.0**. Strictly refuses ungrounded assumptions. |
+| **Advanced RAG (current pre-semantic snapshot)** | **Recall@12: 1.0, MRR: 1.0, Unsupported Claim Rate: 0.0**; however, exact-document rate, exact-page rate, and citation precision are each `0.0`, so this snapshot makes no overall improvement claim. |
 | **CPM Schedule Engine** | **0-day error** on planted `35-day` SWGR-A delay scenario with full float and critical path recalculation. |
 | **Commissioning QA** | **21/21 steps** automatically verified with deterministic pass/fail rules and open non-conformance (`NCR`) tracking. |
 | **Supply Chain Visibility** | **5/5 synthetic shipments** across 15 supplier tiers tracked with schedule task links and alternative supplier recovery options. |

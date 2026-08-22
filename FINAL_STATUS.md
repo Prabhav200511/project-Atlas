@@ -1,19 +1,27 @@
 # Project Atlas Final QA Status
 
-Feature development is frozen. QA date: 2026-07-21 (Asia/Kolkata).
+Feature development remains only partially verified. Deployment verification date: 2026-08-22 (Asia/Kolkata). The canonical branch contains Tasks 1–3 and 5; the paused semantic-runtime work is absent and its measurements are not published here.
+
+## Deployment verification (2026-08-22)
+
+- **Netlify configured target — NOT VERIFIED:** `https://project-atlas.netlify.app/` returned HTTP 200, but visibly served an unrelated climate-awareness “Project ATLAS” site (Droughts/Flooding/Global Warming), not this EPC dashboard.
+- **Render configured target — BLOCKED:** `https://project-atlas-rd7v.onrender.com/health` and `/ready` timed out after 60 seconds. A bounded `/health` curl timed out after 120.011 seconds with HTTP `000` and zero bytes. DNS resolution and TCP 443 succeeded, but the service did not produce an HTTP response.
+- **Local gates — PASS, not production proof:** backend 101 passed with 3 warnings; frontend 9 passed; lint, typecheck, and production build passed. Source and production ancestry checks also passed, with source `main` remaining `52b7e56`.
+- **Deferred:** no production seed/re-upload and no deployed Copilot/RFI semantic proof were run. `evaluation/latest.json` and `evaluation/latest.md` retain their current checked-in pre-semantic results and must not be treated as final semantic or production measurements.
 
 ## QA requirements
 
 | Requirement | Status | Evidence |
 | --- | --- | --- |
-| Backend tests | PASS | `python3 -m pytest -q`: 88 passed, 20 dependency deprecation warnings |
+| Backend tests | PASS (local) | `python -m pytest -q`: 101 passed, 3 warnings |
 | Backend compile check | PASS | `python3 -m compileall -q app scripts evaluation migrations` |
 | Frontend tests | PASS | Vitest: 9 passed across 2 files after executive and Digital Thread integration |
 | Frontend lint | PASS | `npm run lint`: no errors or warnings |
 | Frontend type check | PASS | `npm run typecheck` |
-| Production frontend build | PASS | Next.js production build completed; `/` generated |
-| Deployment probes/startup | PASS | `/health` liveness, `/ready` dependency readiness, environment CORS/API URL, and `scripts/start_production.sh` verified |
-| Render/Vercel deployment configuration | PASS | `render.yaml`, backend-only generic deployment aliases, Vercel Root Directory instructions, idempotent seed/reset commands, and `DEPLOY.md` validated |
+| Frontend production-mode build | PASS (local) | Next.js production build completed; `/` generated locally |
+| Local deployment/startup configuration | PASS (local) | Local configuration/build checks passed; this does not establish that either configured deployment target is live |
+| Netlify configured target | NOT VERIFIED | Returned HTTP 200 for an unrelated climate-awareness “Project ATLAS” site on 2026-08-22, not the EPC dashboard |
+| Render configured target | BLOCKED | `/health` and `/ready` timed out after 60 seconds; bounded `/health` curl timed out after 120.011 seconds with HTTP `000` / zero bytes |
 | Clean database migration | PASS | Alembic upgraded an isolated empty database through `20260721_09`; apply head to existing PostgreSQL before use |
 | Evidence-backed Impact Chain | PASS | Focused unit/API tests verify deterministic five-stage propagation, evidence separation, persistence, and project isolation |
 | Persisted evaluation dashboard | PASS | Labelled JSON/CSV cases, computed compliance/RAG metrics, failure persistence, project isolation, typed client, and dashboard passed focused tests |
@@ -22,8 +30,8 @@ Feature development is frozen. QA date: 2026-07-21 (Asia/Kolkata).
 | Manual-coordination benchmarks | PASS | Project-scoped measured/projected records, exact hours-saved calculation, synthetic labelling, typed API client, and executive card passed focused tests; no measurements are seeded |
 | SWGR-A vertical scenario | PASS | Idempotent integration test verifies cited rating deviation → resubmission → 35-day ETA variance → 28-day exposure → readiness 65→45 → expedite scenario delay 35→17 days |
 | Clean seed | PASS | Isolated API/PostgreSQL/Qdrant run ingested 27/27 documents and seeded 5 shipments |
-| Complete evaluation | PASS | `python3 -m evaluation.run_all` completed and refreshed `evaluation/latest.json` and `.md` |
-| UPS-01 end-to-end smoke | PASS | Focused `UPS-01` Impact Chain test passed; live clean seed passed using corpus tag `UPS-A` |
+| Current checked-in evaluation | PRE-SEMANTIC / NOT FINAL | Existing `evaluation/latest.json` and `.md` values are preserved; final semantic-runtime and production measurements are deferred |
+| UPS-01 end-to-end smoke | PASS (prior local evidence) | Focused `UPS-01` Impact Chain test and isolated clean seed passed using corpus tag `UPS-A` |
 | Project isolation | PASS | Query plan, hybrid retrieval, and Equipment Digital Thread cross-project tests passed |
 | Invalid API-key/error state | PASS | Invalid Gemini key returns structured 502 `model_gateway_error`; optional compliance/schedule narratives fall back to deterministic output |
 | Secret scan: working tree | PASS | No high-confidence secret found outside ignored local files; backend secret names are absent from frontend source/build; rotation not required |
@@ -39,19 +47,23 @@ Feature development is frozen. QA date: 2026-07-21 (Asia/Kolkata).
 
 ## Required flow verification
 
+Except where explicitly labelled as deployment verification above, the retained API-flow evidence below is prior local/checked-in evidence and must not be read as proof that the current configured Netlify or Render targets work.
+
 | Flow | Status | Evidence |
 | --- | --- | --- |
 | 1. Ask a cited knowledge question | PASS | Synthetic evaluator asked the UPS autonomy question; citation correctness was 17/17 overall |
-| Live Gemini cited response | NOT VERIFIED | QA intentionally used an invalid key to verify the error path; live-provider quality was not tested |
-| 2. Detect the UPS deviation | PASS | Clean live API returned `NON_COMPLIANT` for the planted UPS voltage deviation |
-| 3. Open Equipment Digital Thread | PASS | Clean live API returned the project-scoped `UPS-A` thread; UPS-01 isolation test also passed |
-| 4. Display procurement and schedule impact | PASS | Clean live API returned shipment risk and 6 schedule-risk records |
-| 5. Recalculate commissioning readiness | PASS | Clean live API recalculated UPS-A readiness as 35/100 for the seeded state |
-| 6. Compare mitigation scenarios | PASS | Clean live Impact Chain returned exactly 3 deterministic scenarios |
-| 7. Record a human decision | PASS | Clean live API persisted an `APPROVE` action with `ACTION_CREATED` status |
-| 8. Show measured evaluation results | PASS | `evaluation/latest.md`, JSON, and labelled backup evaluation SVG are present and refreshed |
+| Configured Gemini cited response | NOT VERIFIED | QA intentionally used an invalid key to verify the error path; provider quality was not tested |
+| 2. Detect the UPS deviation | PASS (prior local evidence) | Isolated API run returned `NON_COMPLIANT` for the planted UPS voltage deviation |
+| 3. Open Equipment Digital Thread | PASS (prior local evidence) | Isolated API run returned the project-scoped `UPS-A` thread; UPS-01 isolation test also passed |
+| 4. Display procurement and schedule impact | PASS (prior local evidence) | Isolated API run returned shipment risk and 6 schedule-risk records |
+| 5. Recalculate commissioning readiness | PASS (prior local evidence) | Isolated API run recalculated UPS-A readiness as 35/100 for the seeded state |
+| 6. Compare mitigation scenarios | PASS (prior local evidence) | Isolated Impact Chain run returned exactly 3 deterministic scenarios |
+| 7. Record a human decision | PASS (prior local evidence) | Isolated API run persisted an `APPROVE` action with `ACTION_CREATED` status |
+| 8. Show current checked-in evaluation results | PRE-SEMANTIC / NOT FINAL | `evaluation/latest.md`, JSON, and labelled backup evaluation SVG are present; final semantic/production measurements are deferred |
 
 ## Measured evaluation snapshot
+
+This is the current checked-in pre-semantic snapshot, not a final semantic-runtime or production measurement. The values are preserved pending authorized semantic evaluation and deployment remediation.
 
 - Compliance: TP/FP/FN/TN 6/0/0/6; precision/recall/F1 1.0/1.0/1.0.
 - Synthetic evaluator: 27/27 ingestion, RFI Recall@5 1.0, both expected pairs rank 1, citations 17/17.
@@ -101,8 +113,10 @@ python3 -m pytest -q
 
 ## Remaining blockers
 
+- Remediate the Netlify target so it serves this EPC dashboard, then verify dashboard content and API-origin requests.
+- Diagnose and remediate the Render target so `/health` and `/ready` return HTTP 200 before any production seed/re-upload or Copilot/RFI smoke test.
+- The semantic-runtime evaluation and its production measurements remain paused/deferred; do not claim final semantic or production results from the current `evaluation/latest.*` files.
 - Add an owner-approved root `LICENSE` before public-repository submission.
-- Create a commit, run a full-history secret scan, publish the repository, and verify it signed out.
 - Export and verify the final pitch deck; record and verify the public demo video; complete Unstop submission checks.
 - Verify one cited response with a valid Gemini key/model before presenting live-provider behavior.
 - Atlas local PostgreSQL now binds to host port 55432 to avoid the unrelated service occupying port 5432.
