@@ -40,3 +40,6 @@ graphs/*.json
 .idea/
 .vscode/
 *.swp
+
+# Isolated implementation worktrees
+.worktrees/
