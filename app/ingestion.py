@@ -9,7 +9,7 @@ from collections import Counter
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Literal, Protocol
+from typing import TYPE_CHECKING, Literal
 
 import fitz
 from pydantic import BaseModel, Field
@@ -19,6 +19,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import Settings
+from app.embeddings import Embedder
+from app.errors import IngestionError
 from app.models import Document, IngestionJob
 from app.vector import document_filter, parent_filter, retrieval_filter, vector_payload
 
@@ -42,24 +44,18 @@ EQUIPMENT_PATTERN = re.compile(r"\b(?:UPS-[A-Z][A-Z0-9]*|CRAC-\d+|SWGR-[A-Z][A-Z
 SPEC_PATTERN = re.compile(r"\b\d+\.\d+(?:\.\d+)?\b")
 
 
-class IngestionError(Exception):
-    def __init__(self, code: str, message: str, status_code: int = 422) -> None:
-        self.code = code
-        self.message = message
-        self.status_code = status_code
-        super().__init__(message)
-
-
-class Embedder(Protocol):
-    async def embed(self, texts: list[str]) -> list[list[float]]: ...
-
-
 class LocalHashEmbedder:
     def __init__(self, settings: Settings) -> None:
         self.dimensions = settings.embedding_dimensions
 
     async def embed(self, texts: list[str]) -> list[list[float]]:
         return [_hash_embedding(text, self.dimensions) for text in texts]
+
+    async def embed_documents(self, texts: list[str]) -> list[list[float]]:
+        return await self.embed(texts)
+
+    async def embed_queries(self, texts: list[str]) -> list[list[float]]:
+        return await self.embed(texts)
 
 
 def _hash_embedding(text: str, dimensions: int) -> list[float]:

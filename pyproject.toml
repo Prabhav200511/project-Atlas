@@ -20,7 +20,7 @@ dependencies = [
   "pytesseract>=0.3.13",
   "python-multipart>=0.0.18",
   "qdrant-client>=1.12",
-  "sentence-transformers>=3.3",
+  "fastembed>=0.8,<0.9",
   "sqlalchemy>=2.0",
   "uvicorn[standard]>=0.32",
 ]

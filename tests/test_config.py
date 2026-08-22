@@ -9,6 +9,13 @@ from app.vector import project_filter, vector_payload
 from app.workflow import build_workflow
 
 
+def test_semantic_embedding_model_and_cache_defaults() -> None:
+    settings = Settings()
+
+    assert settings.embedding_model == "BAAI/bge-small-en-v1.5"
+    assert settings.embedding_cache_dir == "./.cache/fastembed"
+
+
 def test_settings_accept_connection_overrides() -> None:
     settings = Settings(
         database_url="postgresql+asyncpg://user:pass@db:5432/atlas",
