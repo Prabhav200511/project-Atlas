@@ -1,6 +1,6 @@
 flowchart LR
     Dashboard["Next.js dashboard"] -->|"project-scoped REST"| API["FastAPI monolith"]
-    API -->|"project_id enforced"| Router["LangGraph intent router"]
+    API -->|"project_id enforced"| Planner["LangGraph query planner"]
     Isolation["Project isolation<br/>route validation and storage filters"] -.->|"enforced throughout"| API
 
     Auth["ROADMAP<br/>Authentication and RBAC"] -.-> API
@@ -25,7 +25,7 @@ flowchart LR
         Generate --> Verify["Claim and citation verification<br/>exact supporting spans"]
     end
 
-    Router -->|"knowledge query / RFI search"| Hybrid
+    Planner -->|"Copilot continues through knowledge retrieval"| Hybrid
     Qdrant --> Hybrid
     Verify --> API
 
@@ -36,10 +36,10 @@ flowchart LR
         Commissioning["Commissioning engine<br/>prerequisites, pass/fail, readiness, NCRs"]
     end
 
-    Router -->|"compliance intent"| Compliance
-    Router -->|"schedule intent"| Schedule
-    Router -->|"procurement intent"| Supply
-    Router -->|"commissioning intent"| Commissioning
+    Planner -.->|"advisory suggestion only; no dispatch"| Compliance
+    Planner -.->|"advisory suggestion only; no dispatch"| Schedule
+    Planner -.->|"advisory suggestion only; no dispatch"| Supply
+    Planner -.->|"advisory suggestion only; no dispatch"| Commissioning
 
     Compliance --> Impact["Impact Chain LangGraph<br/>causal chain and 3 mitigation scenarios"]
     Schedule --> Impact

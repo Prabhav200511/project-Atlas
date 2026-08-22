@@ -69,6 +69,7 @@ class QueryPlanResult(BaseModel):
     plan: QueryPlan
     service: str
     endpoint: str
+    execution_mode: Literal["advisory_only"] = "advisory_only"
 
 
 class Planner(Protocol):

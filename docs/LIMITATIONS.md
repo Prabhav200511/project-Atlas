@@ -10,7 +10,7 @@
 ## Data and integrations
 
 - All EPC documents, equipment, vendors, costs, dates, shipment events, and requirements are synthetic.
-- There is no live AIS, vessel position, carrier, vendor, geospatial, weather, ERP, QMS, or P6 integration. Supply-chain responses are explicitly synthetic simulations.
+- There is no live AIS, vessel position, carrier, vendor, geospatial, weather, ERP, QMS, or P6 integration. Supply-chain results are explicitly synthetic demo data.
 - Computer-vision site evidence is roadmap only.
 - Original documents use local filesystem storage, not production object storage.
 - NetworkX/JSON is a lightweight prototype, not production graph storage or governed master data.
@@ -32,7 +32,7 @@
 
 ## Operations and evidence
 
-- Queue-backed ingestion, autoscaling, production observability, backups, disaster recovery, load tests, and SLOs are roadmap work.
+- Upload parsing and indexing run synchronously in the request; there is no background worker or retry queue. Queue-backed ingestion, autoscaling, production observability, backups, disaster recovery, load tests, and SLOs are roadmap work.
 - Measured latencies are in-process evaluation-harness values, not deployment SLOs.
 - Manual effort and hours saved are `NOT_MEASURED`.
 - A root project license is missing and must be resolved before public-repository publication.

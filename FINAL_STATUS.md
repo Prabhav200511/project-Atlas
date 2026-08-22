@@ -18,7 +18,7 @@ Feature development is frozen. QA date: 2026-07-21 (Asia/Kolkata).
 | Evidence-backed Impact Chain | PASS | Focused unit/API tests verify deterministic five-stage propagation, evidence separation, persistence, and project isolation |
 | Persisted evaluation dashboard | PASS | Labelled JSON/CSV cases, computed compliance/RAG metrics, failure persistence, project isolation, typed client, and dashboard passed focused tests |
 | Supply-chain CSV risk workflow | PASS | Project-scoped persistence, schedule links/float, deterministic exposure, alerts/timelines, DELIVERY_RISK propagation, and dashboard table passed focused tests |
-| Counterfactual mitigation simulator | PASS | Three deterministic evidence-backed scenarios, explicit configured/unknown assumptions, persisted selection, recalculated counterfactual chain, and non-mutation regression passed |
+| Counterfactual mitigation calculator | PASS | Three deterministic evidence-backed scenarios, explicit configured/unknown assumptions, persisted selection, recalculated counterfactual chain, and non-mutation regression passed |
 | Manual-coordination benchmarks | PASS | Project-scoped measured/projected records, exact hours-saved calculation, synthetic labelling, typed API client, and executive card passed focused tests; no measurements are seeded |
 | SWGR-A vertical scenario | PASS | Idempotent integration test verifies cited rating deviation → resubmission → 35-day ETA variance → 28-day exposure → readiness 65→45 → expedite scenario delay 35→17 days |
 | Clean seed | PASS | Isolated API/PostgreSQL/Qdrant run ingested 27/27 documents and seeded 5 shipments |

@@ -115,3 +115,12 @@ async def test_schedule_query_routes_to_existing_schedule_service() -> None:
     assert route.plan.intent == "schedule_query"
     assert route.service == "schedule"
     assert route.endpoint == f"/projects/{project_id}/schedule/analysis"
+
+
+@pytest.mark.asyncio
+async def test_route_plan_is_explicitly_advisory_only() -> None:
+    project_id = uuid.uuid4()
+    route = await KnowledgeService(Settings(), None, None).route_query(project_id, "Show critical path risk", [])
+
+    assert route.execution_mode == "advisory_only"
+    assert route.endpoint == f"/projects/{project_id}/schedule/analysis"

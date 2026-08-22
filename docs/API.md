@@ -7,12 +7,12 @@ The running service provides interactive OpenAPI documentation at `/docs`. Every
 | Liveness | `GET /health` | API process status. |
 | Readiness | `GET /ready` | API, PostgreSQL, and Qdrant readiness. |
 | Projects | `POST /projects`, `GET /projects` | Create and select a project. |
-| Documents | `GET/POST /projects/{project_id}/documents` | List project documents or upload and ingest one. |
-| Ingestion | `GET /projects/{project_id}/documents/{document_id}/ingestion` | Return completed or failed ingestion status. |
+| Documents | `GET/POST /projects/{project_id}/documents` | List project documents or upload, parse, and index one synchronously in this request; no background worker or retry queue runs. |
+| Ingestion | `GET /projects/{project_id}/documents/{document_id}/ingestion` | Return the completed or failed status from that synchronous ingestion. |
 | Evidence | `POST /projects/{project_id}/retrieve` | QueryPlan-filtered dense/BM25 retrieval fused by RRF, with chunk ranks and citations. |
 | Generation context | `POST /projects/{project_id}/context` | Reranked, diverse, revision-aware, token-bounded `ContextBundle`. |
-| Knowledge | `POST /projects/{project_id}/copilot` | Grounded answer with verified claim status, conflicts, exact-span citations, and a content-safe workflow trace (latency, chunk IDs, tokens, retry, status). Non-RAG intents return a routing response instead of running calculations in the RAG graph. |
-| Query plan | `POST /projects/{project_id}/query-plan` | Structured query rewrite, intent, filters, and destination service. |
+| Knowledge | `POST /projects/{project_id}/copilot` | Grounded answer with verified claim status, conflicts, exact-span citations, and a content-safe workflow trace (latency, chunk IDs, tokens, retry, status). Copilot continues through knowledge retrieval; it does not execute a recommended service endpoint. |
+| Query plan | `POST /projects/{project_id}/query-plan` | Structured query rewrite, intent, filters, and an existing suggested destination. `execution_mode` is always `advisory_only`: this endpoint classifies and recommends, but does not dispatch or execute the suggested endpoint. |
 | RFI | `POST /projects/{project_id}/rfis/matches` | Ranked “possible previous match” results. |
 | Compliance | `POST /projects/{project_id}/compliance/checks` | Compare one specification and one submittal. |
 | Review | `PATCH /projects/{project_id}/compliance/findings/{finding_id}/review` | Persist approved, rejected, or needs-review action with an optional reviewer note. |

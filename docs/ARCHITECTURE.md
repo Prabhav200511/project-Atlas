@@ -5,8 +5,8 @@ The canonical, syntax-validated diagram is [ARCHITECTURE.mermaid](ARCHITECTURE.m
 ## Implemented flow
 
 1. The Next.js dashboard calls project-scoped FastAPI routes through one typed client.
-2. FastAPI validates `project_id` and routes knowledge/RFI intent through LangGraph. Authentication and RBAC are not implemented.
-3. Original uploads are stored on the project-scoped local filesystem. Structure-aware parsing creates persisted parent sections plus child chunks containing separate `original_text` and `contextual_text`.
+2. FastAPI validates `project_id`; LangGraph classifies the query and may recommend an existing service endpoint, but does not dispatch it. Copilot continues through knowledge retrieval. Authentication and RBAC are not implemented.
+3. Original uploads are stored on the project-scoped local filesystem. The request parses and indexes them synchronously; no background worker or retry queue is running. Structure-aware parsing creates persisted parent sections plus child chunks containing separate `original_text` and `contextual_text`.
 4. Contextual text drives local deterministic dense embeddings and local BM25 ranking. Qdrant stores vectors and chunk payloads; PostgreSQL stores document metadata, workflow records, decisions, and audit events.
 5. Retrieval uses project filters, dense and BM25 candidates, weighted RRF, deduplication, reranking, parent expansion, compression, revision checks, and a deterministic evidence gate with at most one corrective retry.
 6. Generation receives selected evidence only. Claim identifiers, citation identifiers, exact values, and supporting spans are verified before the response is returned.

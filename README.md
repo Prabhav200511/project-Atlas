@@ -46,9 +46,9 @@ Specification Deviation → Vendor Resubmission → Delivery Risk → Schedule I
 
 ### Key Architectural Principles:
 1. **Deterministic Calculations First:** Critical path method (CPM) schedule impacts, unit conversions, float consumption, and commissioning readiness (`% coverage`) are calculated entirely using deterministic Python engines.
-2. **AI for Extraction & Grounding Only:** Groq and Google Gemini power structured extraction, intent routing, and natural-language explanations grounded strictly in retrieved project evidence (`[C1]`, `[C2]`).
+2. **AI for Extraction & Grounding Only:** Groq and Google Gemini power structured extraction, advisory query classification, and natural-language explanations grounded strictly in retrieved project evidence (`[C1]`, `[C2]`).
 3. **Strict Human-in-the-Loop Authority:** AI never mutates project status automatically. Mitigations and schedule recoveries are proposed as counterfactual scenarios requiring human engineering sign-off (`APPROVE` / `REJECT` / `REQUEST_REVIEW`).
-4. **Absolute Project Isolation:** All PostgreSQL entities and Qdrant vector points are strictly tenant-isolated by `project_id`.
+4. **Project-Scoped Filtering, Not Authorization:** PostgreSQL entities and Qdrant vector points are filtered by `project_id`; application authentication and RBAC are not implemented, so deploy behind an authenticated gateway.
 
 ---
 
@@ -62,7 +62,8 @@ flowchart LR
 
     subgraph Backend [FastAPI Application]
         API["REST API Layer"]
-        RAG["LangGraph RAG & Intent Router"]
+        PLAN["LangGraph Query Planner / Classifier"]
+        RAG["Knowledge Retrieval & Grounded Copilot"]
         ING["Contextual Ingestion Engine"]
         COMP["Deterministic Compliance"]
         SCH["CPM Schedule Engine"]
@@ -80,8 +81,10 @@ flowchart LR
     end
 
     UI <--> API
-    API --> RAG & ING & COMP & SCH
+    API --> PLAN & ING & COMP & SCH
     ING --> DB & Q
+    PLAN -->|"Copilot continues through retrieval"| RAG
+    PLAN -.->|"suggested service/endpoint only; no dispatch"| COMP & SCH
     RAG <--> Q & DB
     RAG <--> GEM
     COMP & SCH --> THREAD --> IMPACT --> DB
@@ -89,7 +92,7 @@ flowchart LR
 
 ### Advanced Hybrid RAG Pipeline
 For queries and RFI matches, Atlas uses a multi-stage RAG pipeline that prioritizes precision and safety:
-1. **Query Rewrite & Intent Routing:** Resolves conversation history and routes requests (e.g., `knowledge_query`, `compliance_query`, `schedule_analysis`).
+1. **Query Rewrite & Advisory Classification:** Resolves conversation history and classifies the query (e.g., `knowledge_query`, `compliance_query`, `schedule_query`). It can recommend an existing service/endpoint, but does not dispatch it; Copilot continues through retrieval.
 2. **Hybrid Retrieval:** Combines dense semantic embeddings with sparse lexical scoring (BM25) via **Reciprocal Rank Fusion (RRF)** across project-scoped document chunks.
 3. **Cross-Encoder Reranking & Context Expansion:** Reranks candidate chunks and expands child chunks to full section contexts (`parent_expand`) without exceeding token budgets.
 4. **Evidence Sufficiency Gate:** Refuses to answer (`INSUFFICIENT_EVIDENCE`) if retrieved chunks lack factual grounding for the user's prompt.

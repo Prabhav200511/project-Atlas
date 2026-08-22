@@ -13,14 +13,17 @@ describe("Atlas demo dashboard", () => {
       "Equipment thread",
       "Compliance findings",
       "Impact Chain",
-      "Mitigation simulator",
+      "Mitigation calculator",
       "Commissioning readiness",
-      "Supply-chain simulation",
+      "Synthetic supply-chain demo",
       "Evidence Dashboard",
       "Evaluation",
     ]) expect(html).toContain(label);
     expect(html).toContain("Reset Demo");
-    expect(html).toContain("Synthetic simulation");
+    expect(html).toContain("Synthetic demo data");
+    expect(html).toContain("User-supplied assumptions");
+    expect(html).toContain("No live carrier, AIS, vendor, ERP, or position feed");
+    for (const misleading of ["Mitigation simulator", "Supply-chain simulation"]) expect(html).not.toContain(misleading);
     expect(html).not.toContain("% hours saved");
   });
 
