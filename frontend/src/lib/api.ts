@@ -1,4 +1,4 @@
-const baseUrl = (process.env.NEXT_PUBLIC_API_URL ?? process.env.NEXT_PUBLIC_ATLAS_API_URL ?? (process.env.NODE_ENV === "production" ? "" : "http://localhost:8001")).replace(/\/$/, "");
+const baseUrl = (process.env.NEXT_PUBLIC_API_URL || process.env.NEXT_PUBLIC_ATLAS_API_URL || (process.env.NODE_ENV === "production" ? "" : "http://localhost:8001")).replace(/\/$/, "");
 
 export type Project = { id: string; name: string };
 export type Citation = { document_id: string; filename: string; page: number; section: string };

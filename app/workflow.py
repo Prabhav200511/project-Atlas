@@ -98,7 +98,7 @@ class GeminiQueryPlanner:
                 json_output=True,
             )
             plan = QueryPlan.model_validate_json(raw)
-        except (ValidationError, ValueError, json.JSONDecodeError):
+        except (IngestionError, ValidationError, ValueError, json.JSONDecodeError):
             return fallback
         return _sanitize_query_plan(plan, project_id, query, history, fallback)
 
@@ -691,7 +691,12 @@ class KnowledgeService:
 
     async def _generate_answer(self, question: str, context: ContextBundle) -> object:
         generate = getattr(self.responder, "generate", None)
-        return await generate(question, context) if generate else await self.responder.answer(question, context)
+        try:
+            return await generate(question, context) if generate else await self.responder.answer(question, context)
+        except IngestionError as exc:
+            if exc.code in {"generation_unavailable", "model_gateway_error"}:
+                return _evidence_fallback(context)
+            raise
 
     async def _verify_answer(self, generated: object, context: ContextBundle) -> AnswerResult:
         if isinstance(generated, AnswerResult):
@@ -967,6 +972,36 @@ def _insufficient_answer(
         status="INSUFFICIENT_EVIDENCE",
         missing_information=missing_information or [],
         conflicting_sources=conflicting_sources or [],
+    )
+
+
+def _evidence_fallback(context: ContextBundle) -> AnswerResult:
+    if not context.chunks:
+        return _insufficient_answer(["No retrieved evidence was available."])
+    claims: list[AnswerClaim] = []
+    citations: list[AnswerCitation] = []
+    for index, chunk in enumerate(context.chunks[:3], start=1):
+        citation_id = f"C{index}"
+        source_span = (chunk.evidence_spans or _fallback_spans(chunk.text))[0]
+        span = SupportingSpan(text=source_span.text, start=source_span.start, end=source_span.end)
+        claims.append(AnswerClaim(text=span.text, type="fact", citation_ids=[citation_id]))
+        citations.append(
+            AnswerCitation(
+                **chunk.citation.model_dump(),
+                citation_id=citation_id,
+                chunk_id=chunk.chunk_id,
+                supporting_spans=[span],
+            )
+        )
+    return AnswerResult(
+        answer="AI generation is unavailable. Retrieved project evidence:\n"
+        + "\n".join(f"Document fact: {claim.text} [C{index}]" for index, claim in enumerate(claims, start=1)),
+        citations=citations,
+        claims=claims,
+        confidence=0.5,
+        status="PARTIAL",
+        missing_information=["AI generation was unavailable; showing retrieved evidence only."],
+        conflicting_sources=context.revision_conflicts,
     )
 
 

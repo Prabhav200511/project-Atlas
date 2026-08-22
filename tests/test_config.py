@@ -33,6 +33,19 @@ def test_blank_optional_api_keys_are_unset() -> None:
     assert settings.gemini_api_key is None
 
 
+def test_blank_example_variables_fall_back_to_local_defaults(tmp_path, monkeypatch) -> None:
+    for key in ("DATABASE_URL", "QDRANT_URL", "FRONTEND_URL"):
+        monkeypatch.delenv(key, raising=False)
+    template = tmp_path / ".env"
+    template.write_text("DATABASE_URL=\nQDRANT_URL=\nFRONTEND_URL=\n")
+
+    settings = Settings(_env_file=template)
+
+    assert settings.database_url == "postgresql+asyncpg://atlas:atlas@localhost:55432/atlas"
+    assert settings.qdrant_url == "http://localhost:6333"
+    assert settings.allowed_cors_origins == ["http://localhost:3000"]
+
+
 def test_cors_origins_come_from_environment_configuration() -> None:
     settings = Settings(cors_origins="https://atlas.example, https://review.example/")
 

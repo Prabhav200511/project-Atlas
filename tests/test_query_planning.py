@@ -4,6 +4,7 @@ import uuid
 import pytest
 
 from app.config import Settings
+from app.ingestion import IngestionError
 from app.workflow import ConversationMessage, GeminiQueryPlanner, KnowledgeService
 
 
@@ -53,6 +54,22 @@ async def test_ambiguous_filters_are_left_empty() -> None:
     assert plan.document_ids == []
     assert plan.vendor_ids == []
     assert plan.revision_status is None
+
+
+@pytest.mark.asyncio
+async def test_planner_falls_back_when_model_gateway_is_unavailable() -> None:
+    class UnavailableGateway:
+        is_available = True
+
+        async def generate(self, *_args, **_kwargs) -> str:
+            raise IngestionError("model_gateway_error", "AI provider request failed", 502)
+
+    plan = await GeminiQueryPlanner(Settings(), UnavailableGateway()).plan(
+        uuid.uuid4(), "What is UPS-A battery autonomy?", []
+    )
+
+    assert plan.standalone_query == "What is UPS-A battery autonomy?"
+    assert plan.equipment_ids == ["UPS-A"]
 
 
 class FakeGateway:

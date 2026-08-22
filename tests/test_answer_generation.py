@@ -6,7 +6,7 @@ import pytest
 from app.config import Settings
 from app.context import ContextBundle, ContextChunk, EvidenceSpan, RevisionConflict
 from app.ingestion import Citation, IngestionError
-from app.workflow import GeminiResponder
+from app.workflow import GeminiResponder, KnowledgeService
 
 
 class FakeGateway:
@@ -161,3 +161,18 @@ async def test_uses_one_semantic_call_only_for_uncertain_claim() -> None:
     assert result.status == "ANSWERED"
     assert result.claims[0].support_status == "SUPPORTED"
     assert len(gateway.calls) == 2
+
+
+@pytest.mark.asyncio
+async def test_generation_outage_returns_valid_retrieved_evidence() -> None:
+    class UnavailableResponder:
+        async def generate(self, *_args, **_kwargs) -> object:
+            raise IngestionError("generation_unavailable", "AI provider unavailable", 503)
+
+    service = KnowledgeService(Settings(), None, None, responder=UnavailableResponder())
+    result = await service._generate_answer("How long is the backup runtime?", context())
+
+    assert result.status == "PARTIAL"
+    assert result.citations[0].citation_id == "C1"
+    assert result.citations[0].supporting_spans[0].text == "UPS-A battery autonomy shall be 15 minutes."
+    assert "[C1]" in result.answer
