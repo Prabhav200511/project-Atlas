@@ -4,10 +4,10 @@
 
 - Repository: `Prabhav200511/project-Atlas`
 - Branch: `main`
-- Deployed commit: `fcf4ce7293c0ca447556b723e26edeb6ffae8497`
+- Deployed commit: `fd45ea4578fdd4eb9e534114584608fb9be024c5`
 - Render service: `project-Atlas` (`Python 3`, free instance, Oregon)
 - Backend URL: `https://project-atlas-rd7v.onrender.com`
-- Verified at: `2026-08-23T12:27:29Z`
+- Verified at: `2026-08-23T12:39:22Z`
 
 Render runs from the repository root with:
 
@@ -17,6 +17,28 @@ Start command: bash ./scripts/start_production.sh
 Health-check path: /ready
 Auto-deploy: main branch commits
 ```
+
+## Active frontend deployment
+
+- Repository: `Prabhav200511/project-Atlas`
+- Branch: `main`
+- Verified deployed commit: `fd45ea4578fdd4eb9e534114584608fb9be024c5`
+- Netlify project: `project-atlas-production` (free plan)
+- Frontend URL: `https://project-atlas-production.netlify.app`
+- Verified at: `2026-08-23T12:39:22Z`
+
+Netlify builds the Next.js application with:
+
+```text
+Base directory: frontend
+Build command: npm run build
+Publish directory: .next
+Production branch: main
+Environment variable: NEXT_PUBLIC_API_URL=https://project-atlas-rd7v.onrender.com
+Auto-publish: main branch commits
+```
+
+The unrelated climate-awareness site at `https://project-atlas.netlify.app` was not modified or relinked.
 
 ## Environment contract
 
@@ -49,6 +71,7 @@ ATLAS_ENVIRONMENT=production
 WEB_CONCURRENCY=1
 FORWARDED_ALLOW_IPS=*
 FAST_RERANK=1
+FRONTEND_URL=https://project-atlas-production.netlify.app
 ```
 
 ## Recovery performed on 2026-08-23
@@ -78,6 +101,22 @@ Sanitized result at `2026-08-23T12:27:29Z`:
 /docs    HTTP 200
 ```
 
+Frontend and cross-origin verification at `2026-08-23T12:39:22Z`:
+
+```text
+Netlify deploy  main@fd45ea4  published in 34 seconds
+Frontend        HTTP 200     Project Atlas EPC identity confirmed
+Legacy markers  absent       Droughts, Flooding, Global Warming
+CORS preflight  HTTP 200     access-control-allow-origin exactly matched the Netlify URL
+Verifier        PASS         liveness, readiness, docs, CORS, frontend identity
+```
+
+Re-run the same automated checks with:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\verify_deployment.py --api-url https://project-atlas-rd7v.onrender.com --frontend-url https://project-atlas-production.netlify.app
+```
+
 The first recovered runtime took about 63 seconds from the start command to Render declaring the service live. The free Render web service can spin down during inactivity, so this deployment does not provide an always-on SLA. The free Qdrant cluster can suspend after inactivity and must be reactivated before readiness returns to `200` again.
 
 The free Render PostgreSQL instance is scheduled to expire on `2026-09-22` unless it is upgraded or replaced. Treat that date as an operational deadline; the database will otherwise be deleted.
@@ -85,5 +124,7 @@ The free Render PostgreSQL instance is scheduled to expire on `2026-09-22` unles
 ## Rollback
 
 For an application regression, open Render **Events**, select the last successful deployment for `fcf4ce7293c0ca447556b723e26edeb6ffae8497`, and choose **Rollback**. Re-run all three probes after rollback.
+
+For a frontend regression, open the Netlify project `project-atlas-production`, select **Deploys**, open the prior successful production deploy for `fd45ea4578fdd4eb9e534114584608fb9be024c5`, and publish that deploy. Re-run frontend identity, CORS preflight, and the automated verifier after rollback. Do not redirect or replace the unrelated `project-atlas.netlify.app` site.
 
 The historical Git baseline `b6d5bb0db10160d368a516f351ae2232701207d7` predates the recovered database configuration and did not produce a healthy Render deployment in this environment. Use it only as a source comparison point, not as an operational rollback target.
