@@ -49,7 +49,7 @@ git rev-parse origin/main
 git status --short
 ```
 
-Expected: local and `origin/main` both resolve to the plan commit `ec4f2bf327174f3758862e8b2c996e13807801eb`, and status is empty. The product rollback baseline remains `b6d5bb0db10160d368a516f351ae2232701207d7`.
+Expected: local and `origin/main` resolve to the same SHA, `git merge-base --is-ancestor ec4f2bf327174f3758862e8b2c996e13807801eb HEAD` exits `0`, and status is empty. The product rollback baseline remains `b6d5bb0db10160d368a516f351ae2232701207d7`.
 
 - [ ] **Step 2: Write the deployment contract test**
 
