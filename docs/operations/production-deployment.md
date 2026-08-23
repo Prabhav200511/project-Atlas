@@ -117,6 +117,23 @@ Re-run the same automated checks with:
 .\.venv\Scripts\python.exe scripts\verify_deployment.py --api-url https://project-atlas-rd7v.onrender.com --frontend-url https://project-atlas-production.netlify.app
 ```
 
+## Synthetic production canary
+
+Sanitized workflow evidence at `2026-08-23T12:45:12Z`:
+
+```text
+Deployed backend SHA: 035ed4b67929b6372a97b8512af8f48a9dfe7f1b
+Project name: Atlas Production Canary 2026-08-23-035ed4b
+Project ID: 89a77673-9237-49b3-89c8-8f53ed5fd47e
+Synthetic documents: 27
+Ingestion status: 27 completed, 0 incomplete
+Synthetic shipments: 5
+Copilot status: PARTIAL
+Document-backed citations: 3
+```
+
+The canary used only `data/synthetic_epc` through `scripts/seed_demo.py`. The verification record intentionally excludes answer text and source-document content.
+
 The first recovered runtime took about 63 seconds from the start command to Render declaring the service live. The free Render web service can spin down during inactivity, so this deployment does not provide an always-on SLA. The free Qdrant cluster can suspend after inactivity and must be reactivated before readiness returns to `200` again.
 
 The free Render PostgreSQL instance is scheduled to expire on `2026-09-22` unless it is upgraded or replaced. Treat that date as an operational deadline; the database will otherwise be deleted.
