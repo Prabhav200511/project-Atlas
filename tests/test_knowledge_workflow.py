@@ -4,12 +4,14 @@ import pytest
 
 from app.config import Settings
 from app.context import ContextBundle, LexicalReranker, PostRetrievalProcessor
+from app.errors import IngestionError
 from app.ingestion import Citation, RetrievalResult
 from app.workflow import (
     AnswerCitation,
     AnswerClaim,
     AnswerResult,
     ConversationMessage,
+    GeminiQueryPlanner,
     KnowledgeService,
     QueryPlan,
     SupportingSpan,
@@ -46,7 +48,28 @@ class Responder:
         )
 
 
-def result(project_id: uuid.UUID, text: str, *, chunk_id: str, filename: str = "UPS_Specification.md", revision: str = "A"):
+class UnavailableGateway:
+    is_available = False
+
+
+class UnavailableResponder:
+    def __init__(self) -> None:
+        self.calls = 0
+
+    async def generate(self, *_args, **_kwargs) -> object:
+        self.calls += 1
+        raise IngestionError("generation_unavailable", "AI provider unavailable", 503)
+
+
+def result(
+    project_id: uuid.UUID,
+    text: str,
+    *,
+    chunk_id: str,
+    filename: str = "UPS_Specification.md",
+    revision: str = "A",
+    approval_status: str = "approved",
+):
     document_id = uuid.uuid4()
     return RetrievalResult(
         chunk_id=chunk_id,
@@ -62,7 +85,7 @@ def result(project_id: uuid.UUID, text: str, *, chunk_id: str, filename: str = "
         bm25_rank=1,
         rrf_score=0.03,
         citation=Citation(document_id=document_id, filename=filename, page=2, section="Battery"),
-        attributes={"equipment_ids": ["UPS-A"], "approval_status": "approved", "revision": revision},
+        attributes={"equipment_ids": ["UPS-A"], "approval_status": approval_status, "revision": revision},
     )
 
 
@@ -90,6 +113,30 @@ def service(project_id: uuid.UUID, plan: QueryPlan, batches: list[list[Retrieval
 
     value._retrieve_batches = retrieve
     return value, calls
+
+
+def outage_service(project_id: uuid.UUID, items: list[RetrievalResult]):
+    settings = Settings(
+        reranker_score_threshold=0,
+        context_min_chunks=1,
+        context_max_chunks=8,
+    )
+    responder = UnavailableResponder()
+    value = KnowledgeService(
+        settings,
+        None,
+        None,
+        responder=responder,
+        planner=GeminiQueryPlanner(settings, gateway=UnavailableGateway()),
+        postprocessor=PostRetrievalProcessor(settings, reranker=LexicalReranker()),
+    )
+
+    async def retrieve(request_project: str, _query: str, query_plan: QueryPlan):
+        assert uuid.UUID(request_project) == project_id == query_plan.project_id
+        return [items]
+
+    value._retrieve_batches = retrieve
+    return value, responder
 
 
 def plan(project_id: uuid.UUID, query: str, **updates) -> QueryPlan:
@@ -180,3 +227,78 @@ async def test_insufficient_evidence_retries_once_then_stops() -> None:
     assert answer.trace.retry_count == 1
     assert len(calls) == 2
     assert "corrective_retrieve" in answer.trace.stage_latency_ms
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("status", "query"),
+    [
+        ("proposed", "What UPS-A recovery measure is proposed?"),
+        ("issued for review", "What UPS-A recovery measure was issued for review?"),
+    ],
+)
+async def test_full_workflow_answers_explicit_non_current_revision_status(status: str, query: str) -> None:
+    project_id = uuid.uuid4()
+    query_plan = plan(project_id, query, revision_status=status)
+    item = result(
+        project_id,
+        f"The UPS-A {status} recovery measure is to switch vendor.",
+        chunk_id=f"status-{status}",
+        approval_status=status,
+    )
+    atlas, _ = service(project_id, query_plan, [[item]])
+
+    answer = await atlas.copilot(project_id, query, [])
+
+    assert answer.status == "ANSWERED"
+    assert answer.trace.selected_chunk_ids == [item.chunk_id]
+    assert status in answer.answer
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("status", "query"),
+    [
+        ("proposed", "What UPS-A recovery measure is proposed?"),
+        ("issued for review", "What UPS-A recovery measure was issued for review?"),
+    ],
+)
+async def test_complete_provider_outage_workflow_preserves_explicit_revision_status(
+    status: str,
+    query: str,
+) -> None:
+    project_id = uuid.uuid4()
+    item = result(
+        project_id,
+        f"The UPS-A {status} recovery measure is to switch vendor.",
+        chunk_id=f"outage-{status}",
+        approval_status=status,
+    )
+    atlas, responder = outage_service(project_id, [item])
+
+    answer = await atlas.copilot(project_id, query, [])
+
+    assert answer.status == "PARTIAL"
+    assert answer.trace.selected_chunk_ids == [item.chunk_id]
+    assert f"{status.title()} document fact:" in answer.answer
+    assert "switch vendor" in answer.answer
+    assert responder.calls == 1
+
+
+@pytest.mark.asyncio
+async def test_complete_provider_outage_workflow_rejects_unrequested_non_current_evidence() -> None:
+    project_id = uuid.uuid4()
+    query = "What is the UPS-A recovery measure?"
+    item = result(
+        project_id,
+        "The UPS-A proposed recovery measure is to switch vendor.",
+        chunk_id="outage-unrequested-proposed",
+        approval_status="proposed",
+    )
+    atlas, responder = outage_service(project_id, [item])
+
+    answer = await atlas.copilot(project_id, query, [])
+
+    assert answer.status == "INSUFFICIENT_EVIDENCE"
+    assert "switch vendor" not in answer.answer
+    assert responder.calls == 0

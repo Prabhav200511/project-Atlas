@@ -66,6 +66,47 @@ def generated(value: str = "15", citation_id: str = "C1") -> dict:
     }
 
 
+def mixed_currency_context() -> ContextBundle:
+    bundle = context("Approved schedule: 35-day delay.")
+    bundle.query = "What is the active schedule risk?"
+    bundle.chunks[0].attributes = {"approval_status": "approved"}
+    proposed_text = "Switch vendor immediately."
+    proposed_document_id = uuid.uuid4()
+    bundle.chunks.append(
+        ContextChunk(
+            chunk_id="chunk-proposed",
+            parent_id=uuid.uuid4(),
+            document_id=proposed_document_id,
+            document_type="change_order",
+            project_id=bundle.project_id,
+            page=1,
+            section="Mitigation",
+            text=proposed_text,
+            score=0.8,
+            dense_rank=2,
+            bm25_rank=2,
+            rrf_score=0.02,
+            citation=Citation(
+                document_id=proposed_document_id,
+                filename="CO-Proposed.md",
+                page=1,
+                section="Mitigation",
+            ),
+            attributes={"approval_status": "proposed"},
+            rerank_score=0.8,
+            evidence_spans=[EvidenceSpan(start=0, end=len(proposed_text), text=proposed_text)],
+        )
+    )
+    return bundle
+
+
+def requested_non_current_context(status: str, query: str) -> ContextBundle:
+    bundle = context(f"Switch vendor immediately under the {status} recovery measure.")
+    bundle.query = query
+    bundle.chunks[0].attributes = {"approval_status": status}
+    return bundle
+
+
 @pytest.mark.asyncio
 async def test_generates_mapped_citations_from_selected_context_only() -> None:
     gateway = FakeGateway(generated())
@@ -176,3 +217,97 @@ async def test_generation_outage_returns_valid_retrieved_evidence() -> None:
     assert result.citations[0].citation_id == "C1"
     assert result.citations[0].supporting_spans[0].text == "UPS-A battery autonomy shall be 15 minutes."
     assert "[C1]" in result.answer
+
+
+@pytest.mark.asyncio
+async def test_generated_answer_never_receives_unrequested_proposed_supplemental_evidence() -> None:
+    bundle = mixed_currency_context()
+    response = {
+        "answer": "The active schedule risk is a 35-day delay. [C1]",
+        "citation_ids": ["C1"],
+        "claims": [
+            {"text": "The active schedule risk is a 35-day delay.", "type": "fact", "citation_ids": ["C1"]}
+        ],
+        "confidence": 0.9,
+        "status": "ANSWERED",
+        "missing_information": [],
+    }
+    gateway = FakeGateway(response)
+
+    result = await GeminiResponder(Settings(), gateway).answer(bundle.query, bundle)
+
+    evidence = json.loads(gateway.calls[0][1])["evidence"]
+    assert result.status == "ANSWERED"
+    assert [item["document"] for item in evidence] == ["UPS_Specification.md"]
+    assert "Switch vendor immediately" not in gateway.calls[0][1]
+
+
+@pytest.mark.asyncio
+async def test_provider_outage_fallback_omits_unrequested_proposed_supplemental_evidence() -> None:
+    class UnavailableResponder:
+        async def generate(self, *_args, **_kwargs) -> object:
+            raise IngestionError("generation_unavailable", "AI provider unavailable", 503)
+
+    bundle = mixed_currency_context()
+    service = KnowledgeService(Settings(), None, None, responder=UnavailableResponder())
+
+    result = await service._generate_answer(bundle.query, bundle)
+
+    assert result.status == "PARTIAL"
+    assert [citation.chunk_id for citation in result.citations] == ["chunk-15"]
+    assert [claim.text for claim in result.claims] == ["Approved schedule: 35-day delay."]
+    assert "Switch vendor immediately" not in result.answer
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("status", "query"),
+    [
+        ("proposed", "What recovery measure is proposed?"),
+        ("issued for review", "What was issued for review?"),
+    ],
+)
+async def test_gemini_receives_explicit_non_current_evidence_with_status_label(status: str, query: str) -> None:
+    response = {
+        "answer": f"The {status} measure is to switch vendor. [C1]",
+        "citation_ids": ["C1"],
+        "claims": [
+            {"text": f"The {status} measure is to switch vendor.", "type": "fact", "citation_ids": ["C1"]}
+        ],
+        "confidence": 0.9,
+        "status": "ANSWERED",
+        "missing_information": [],
+    }
+    gateway = FakeGateway(response)
+
+    result = await GeminiResponder(Settings(), gateway).answer(
+        query,
+        requested_non_current_context(status, query),
+    )
+
+    assert result.status == "ANSWERED"
+    assert f"{status.title()} document fact:" in result.answer
+    evidence = json.loads(gateway.calls[0][1])["evidence"]
+    assert evidence[0]["approval_status"] == status
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("status", "query"),
+    [
+        ("proposed", "What recovery measure is proposed?"),
+        ("issued for review", "What was issued for review?"),
+    ],
+)
+async def test_provider_outage_labels_explicit_non_current_evidence(status: str, query: str) -> None:
+    class UnavailableResponder:
+        async def generate(self, *_args, **_kwargs) -> object:
+            raise IngestionError("generation_unavailable", "AI provider unavailable", 503)
+
+    service = KnowledgeService(Settings(), None, None, responder=UnavailableResponder())
+
+    result = await service._generate_answer(query, requested_non_current_context(status, query))
+
+    assert result.status == "PARTIAL"
+    assert f"{status.title()} document fact:" in result.answer
+    assert "Switch vendor immediately" in result.answer

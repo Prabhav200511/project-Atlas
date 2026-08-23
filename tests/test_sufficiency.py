@@ -170,3 +170,85 @@ def test_conflicting_sources_remain_identified_when_approved_evidence_is_suffici
 
     assert _evidence_sufficiency(context, plan, Settings(reranker_score_threshold=0.2)) == []
     assert context.revision_conflicts == [conflict]
+
+
+def test_supplemental_proposed_source_does_not_invalidate_primary_current_evidence() -> None:
+    project_id = uuid.uuid4()
+    current = result(
+        "The active schedule risk is a 35-day switchgear delay.",
+        project_id,
+        document_type="schedule",
+        approval="approved",
+    )
+    proposed = result(
+        "A proposed recovery measure has not been approved.",
+        project_id,
+        document_type="change_order",
+        approval="proposed",
+    )
+    context = ContextBundle(
+        project_id=project_id,
+        query="What is the active schedule risk and downstream impact?",
+        chunks=[
+            ContextChunk(**current.model_dump(), rerank_score=0.9),
+            ContextChunk(**proposed.model_dump(), rerank_score=0.7),
+        ],
+        total_tokens=40,
+        max_context_tokens=4_000,
+    )
+    plan = QueryPlan(
+        original_query=context.query,
+        standalone_query=context.query,
+        intent="knowledge_query",
+        project_id=project_id,
+    )
+
+    assert _evidence_sufficiency(context, plan, Settings(reranker_score_threshold=0.2)) == []
+
+
+def test_primary_proposed_source_remains_insufficient_without_requested_revision_status() -> None:
+    project_id = uuid.uuid4()
+    proposed = result(
+        "A proposed recovery measure has not been approved.",
+        project_id,
+        document_type="change_order",
+        approval="proposed",
+    )
+    context = bundle(proposed, "What recovery measure is committed?")
+    plan = QueryPlan(
+        original_query=context.query,
+        standalone_query=context.query,
+        intent="knowledge_query",
+        project_id=project_id,
+    )
+
+    assert "non-current revisions found: proposed" in _evidence_sufficiency(
+        context, plan, Settings(reranker_score_threshold=0.2)
+    )
+
+
+@pytest.mark.parametrize(
+    ("status", "query"),
+    [
+        ("proposed", "What recovery measure is proposed?"),
+        ("issued for review", "What was issued for review?"),
+    ],
+)
+def test_explicit_revision_status_allows_matching_non_current_primary(status: str, query: str) -> None:
+    project_id = uuid.uuid4()
+    requested = result(
+        f"The {status} recovery measure is to switch vendor.",
+        project_id,
+        document_type="change_order",
+        approval=status,
+    )
+    context = bundle(requested, query)
+    plan = QueryPlan(
+        original_query=query,
+        standalone_query=query,
+        intent="knowledge_query",
+        project_id=project_id,
+        revision_status=status,
+    )
+
+    assert _evidence_sufficiency(context, plan, Settings(reranker_score_threshold=0.2)) == []

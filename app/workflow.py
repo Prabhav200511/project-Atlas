@@ -113,6 +113,42 @@ def _planner_context(history: list[ConversationMessage]) -> dict[str, object]:
     }
 
 
+LOCAL_REVISION_STATUSES = (
+    "issued for construction",
+    "issued for review",
+    "issued for bid",
+    "pending approval",
+    "needs review",
+    "superseded",
+    "proposed",
+    "approved",
+    "answered",
+    "ifc",
+)
+
+
+def _local_revision_status(query: str) -> str | None:
+    stripped = query.strip()
+    if (
+        re.search(r"\b(?:do\s+not|don't|not|exclude|excluding|without|avoid)\b", stripped, re.IGNORECASE)
+        or re.search(r"\b(?:if|whether)\b", stripped, re.IGNORECASE)
+        or re.search(r"\b(?:status|proposed\s+answer|answer)\s*:", stripped, re.IGNORECASE)
+        or not re.match(
+            r"^(?:(?:(?:can|could|would)\s+you\s+(?:please\s+)?|please\s+)?"
+            r"(?:find|list|retrieve|show)|tell\s+me|what|which)\b",
+            stripped,
+            re.IGNORECASE,
+        )
+    ):
+        return None
+    normalized_query = _normalize_status(query)
+    for status in LOCAL_REVISION_STATUSES:
+        normalized_status = _normalize_status(status)
+        if re.search(rf"\b{re.escape(normalized_status)}\b", normalized_query):
+            return status
+    return None
+
+
 def _local_query_plan(project_id: uuid.UUID, query: str, history: list[ConversationMessage]) -> QueryPlan:
     recent_user = next((message.content for message in reversed(history) if message.role == "user"), "")
     follow_up = bool(re.match(r"^(?:and|what about|how about|does it|that|those)\b", query.strip(), re.IGNORECASE))
@@ -138,6 +174,7 @@ def _local_query_plan(project_id: uuid.UUID, query: str, history: list[Conversat
         project_id=project_id,
         document_types=document_types,
         equipment_ids=equipment_ids,
+        revision_status=_local_revision_status(query),
         subqueries=_split_subqueries(standalone),
     )
 
@@ -153,7 +190,7 @@ def _sanitize_query_plan(
     allowed_document_ids = {uuid.UUID(value) for value in re.findall(r"\b[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}\b", context)}
     allowed_equipment = set(entity_references(context)["equipment_tags"])
     vendor_ids = [value for value in plan.vendor_ids if re.search(rf"\b{re.escape(value)}\b", context, re.IGNORECASE)]
-    revision_status = plan.revision_status if plan.revision_status and plan.revision_status.lower() in context.lower() else None
+    revision_status = _local_revision_status(query)
     section = plan.section if plan.section and plan.section.lower() in context.lower() else None
     standalone = plan.standalone_query.strip() or fallback.standalone_query
     return plan.model_copy(
@@ -299,10 +336,12 @@ class GeminiResponder:
         )
 
     async def answer(self, question: str, context: ContextBundle) -> AnswerResult:
-        generated = await self.generate(question, context)
-        return await self.verify(generated, context)
+        safe_context = _generation_context(context)
+        generated = await self.generate(question, safe_context)
+        return await self.verify(generated, safe_context)
 
     async def generate(self, question: str, context: ContextBundle) -> _GeneratedAnswer:
+        context = _generation_context(context)
         if not context.chunks:
             return _GeneratedAnswer(
                 answer="Insufficient evidence in this project.",
@@ -320,11 +359,12 @@ class GeminiResponder:
                 "section": chunk.section,
                 "chunk_id": chunk.chunk_id,
                 "text": chunk.text,
+                "approval_status": _raw_approval_status(chunk),
             }
             for citation_id, chunk in citation_map.items()
         ]
         raw = await self.gateway.generate(
-            "Return JSON only. Answer solely from EVIDENCE. Cite each factual claim inline as [C1]. Classify every claim as fact, calculation, or recommendation. Use only supplied citation IDs. State conflicts and missing information; use INSUFFICIENT_EVIDENCE rather than guessing.",
+            "Return JSON only. Answer solely from EVIDENCE. Cite each factual claim inline as [C1]. Classify every claim as fact, calculation, or recommendation. Treat approval_status as authoritative: describe non-current evidence with that exact status and never as a current fact. Use only supplied citation IDs. State conflicts and missing information; use INSUFFICIENT_EVIDENCE rather than guessing.",
             json.dumps(
                 {
                     "question": question,
@@ -342,6 +382,7 @@ class GeminiResponder:
         return generated
 
     async def verify(self, generated: _GeneratedAnswer, context: ContextBundle) -> AnswerResult:
+        context = _generation_context(context)
         citation_map = {f"C{index}": chunk for index, chunk in enumerate(context.chunks, start=1)}
         return await _ground_answer(generated, citation_map, context, self.gateway)
 
@@ -460,6 +501,7 @@ def build_knowledge_workflow(service: "KnowledgeService"):
                 "sufficiency_reasons": reasons,
                 "retrieval_attempts": state.get("retry_count", 0) + 1,
                 "corrective_query": corrective,
+                "requested_revision_status": _normalize_status(plan.revision_status or "") or None,
             }
         )
         return {
@@ -648,6 +690,9 @@ class KnowledgeService:
 
     async def rfi_matches(self, project_id: uuid.UUID, proposed_rfi: str, threshold: float | None = None) -> RfiResult:
         plan = await self.query_plan(project_id, proposed_rfi, [])
+        plan = plan.model_copy(
+            update={"intent": "rfi_search", "document_types": ["RFI"], "revision_status": None}
+        )
         state = await self.rfi_workflow.ainvoke(
             {
                 "project_id": str(project_id),
@@ -691,6 +736,7 @@ class KnowledgeService:
         ))
 
     async def _generate_answer(self, question: str, context: ContextBundle) -> object:
+        context = _generation_context(context)
         generate = getattr(self.responder, "generate", None)
         try:
             return await generate(question, context) if generate else await self.responder.answer(question, context)
@@ -700,6 +746,7 @@ class KnowledgeService:
             raise
 
     async def _verify_answer(self, generated: object, context: ContextBundle) -> AnswerResult:
+        context = _generation_context(context)
         if isinstance(generated, AnswerResult):
             return generated
         verify = getattr(self.responder, "verify", None)
@@ -758,10 +805,11 @@ def _evidence_sufficiency(context: ContextBundle, plan: QueryPlan, settings: Set
     missing_equipment = sorted(set(plan.equipment_ids) - present_equipment)
     if missing_equipment:
         reasons.append(f"equipment evidence is missing: {', '.join(missing_equipment)}")
-    disallowed = [status for status in (_approval_status(chunk) for chunk in chunks) if status and status not in APPROVED_EVIDENCE]
-    if disallowed:
-        reasons.append(f"non-current revisions found: {', '.join(sorted(set(disallowed)))}")
-    if plan.revision_status and not any(_approval_status(chunk) == plan.revision_status.lower() for chunk in chunks):
+    requested_status = _normalize_status(plan.revision_status or "")
+    primary_status = _approval_status(chunks[0]) if chunks else ""
+    if primary_status and primary_status not in APPROVED_EVIDENCE and primary_status != requested_status:
+        reasons.append(f"non-current revisions found: {primary_status}")
+    if requested_status and not any(_approval_status(chunk) == requested_status for chunk in chunks):
         reasons.append(f"required revision status is missing: {plan.revision_status}")
     if _requires_value(context.query) and not re.search(r"\b\d+(?:\.\d+)?\b", " ".join(chunk.text for chunk in chunks)):
         reasons.append("answer-bearing values are missing")
@@ -770,7 +818,7 @@ def _evidence_sufficiency(context: ContextBundle, plan: QueryPlan, settings: Set
     return reasons
 
 
-APPROVED_EVIDENCE = {"approved", "answered", "current", "ifc", "issued for bid", "issued for construction"}
+APPROVED_EVIDENCE = {"approved", "answered", "current", "ifc", "issued bid", "issued construction"}
 QUERY_STOP_WORDS = {"a", "an", "and", "are", "for", "from", "in", "is", "of", "on", "or", "the", "to", "what"}
 
 
@@ -778,13 +826,52 @@ def _query_terms(text: str) -> set[str]:
     return {term for term in re.findall(r"[a-z0-9]+(?:-[a-z0-9]+)?", text.lower()) if term not in QUERY_STOP_WORDS}
 
 
-def _approval_status(chunk: ContextChunk) -> str:
+def _normalize_status(value: str) -> str:
+    return " ".join(
+        term
+        for term in re.findall(r"[a-z0-9]+", value.lower())
+        if term not in QUERY_STOP_WORDS
+    )
+
+
+def _status_requested(status: str, query: str, explicit_status: str | None = None) -> bool:
+    normalized = _normalize_status(status)
+    if not normalized:
+        return False
+    if explicit_status and normalized == _normalize_status(explicit_status):
+        return True
+    return set(normalized.split()) <= _query_terms(query)
+
+
+def _raw_approval_status(chunk: ContextChunk) -> str:
     return str(
         chunk.attributes.get("approval_status")
         or chunk.attributes.get("revision_status")
         or chunk.attributes.get("rfi_status")
         or ""
     ).strip().lower()
+
+
+def _approval_status(chunk: ContextChunk) -> str:
+    return _normalize_status(_raw_approval_status(chunk))
+
+
+def _generation_context(context: ContextBundle) -> ContextBundle:
+    chunks = [
+        chunk
+        for chunk in context.chunks
+        if not (status := _approval_status(chunk))
+        or status in APPROVED_EVIDENCE
+        or _status_requested(status, context.query, context.requested_revision_status)
+    ]
+    if len(chunks) == len(context.chunks):
+        return context
+    return context.model_copy(
+        update={
+            "chunks": chunks,
+            "total_tokens": sum((len(chunk.text) + 3) // 4 for chunk in chunks),
+        }
+    )
 
 
 def _requires_value(query: str) -> bool:
@@ -850,8 +937,17 @@ async def _ground_answer(
         if citation_id in used
     ]
     labels = {"fact": "Document fact", "calculation": "Calculation", "recommendation": "Recommendation"}
+
+    def claim_label(claim: AnswerClaim) -> str:
+        statuses = {
+            _raw_approval_status(citation_map[citation_id])
+            for citation_id in claim.citation_ids
+            if _approval_status(citation_map[citation_id]) not in APPROVED_EVIDENCE
+        }
+        return f"{next(iter(statuses)).title()} {labels[claim.type].lower()}" if len(statuses) == 1 else labels[claim.type]
+
     answer = "\n".join(
-        f"{labels[claim.type]}: {claim.text} {' '.join(f'[{value}]' for value in claim.citation_ids)}".rstrip()
+        f"{claim_label(claim)}: {claim.text} {' '.join(f'[{value}]' for value in claim.citation_ids)}".rstrip()
         for claim in claims
     )
     if context.revision_conflicts:
@@ -994,9 +1090,18 @@ def _evidence_fallback(context: ContextBundle) -> AnswerResult:
                 supporting_spans=[span],
             )
         )
+    labels = [
+        f"{_raw_approval_status(chunk).title()} document fact"
+        if _approval_status(chunk) not in APPROVED_EVIDENCE and _approval_status(chunk)
+        else "Document fact"
+        for chunk in context.chunks[:3]
+    ]
     return AnswerResult(
         answer="AI generation is unavailable. Retrieved project evidence:\n"
-        + "\n".join(f"Document fact: {claim.text} [C{index}]" for index, claim in enumerate(claims, start=1)),
+        + "\n".join(
+            f"{label}: {claim.text} [C{index}]"
+            for index, (label, claim) in enumerate(zip(labels, claims, strict=True), start=1)
+        ),
         citations=citations,
         claims=claims,
         confidence=0.5,

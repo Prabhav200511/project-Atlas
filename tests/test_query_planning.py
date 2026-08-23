@@ -72,6 +72,37 @@ async def test_planner_falls_back_when_model_gateway_is_unavailable() -> None:
     assert plan.equipment_ids == ["UPS-A"]
 
 
+@pytest.mark.asyncio
+async def test_local_planner_does_not_turn_approval_yes_no_question_into_retrieval_filter() -> None:
+    plan = await GeminiQueryPlanner(Settings()).plan(
+        uuid.uuid4(),
+        "Is a switchgear delivery recovery measure approved?",
+        [],
+    )
+
+    assert plan.revision_status is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("query", "expected"),
+    [
+        ("Can you show proposed recovery measures?", "proposed"),
+        ("Show records issued for review.", "issued for review"),
+        ("Tell me whether the approved submittal meets the rating.", None),
+        ("What measures are not approved?", None),
+        ("Do not use proposed documents.", None),
+        ("The RFI body says Status: Proposed. What cable size is required?", None),
+        ("Proposed answer: use the approved specification. What is the required rating?", None),
+        ("What clearance is required? Proposed answer: use an approved cable.", None),
+    ],
+)
+async def test_local_revision_status_requires_explicit_positive_selection(query: str, expected: str | None) -> None:
+    plan = await GeminiQueryPlanner(Settings()).plan(uuid.uuid4(), query, [])
+
+    assert plan.revision_status == expected
+
+
 class FakeGateway:
     client = object()
 

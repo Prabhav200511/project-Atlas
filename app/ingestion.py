@@ -347,6 +347,26 @@ def extract_metadata(extracted: ExtractedDocument) -> dict[str, object]:
     }
 
 
+STATUS_DOCUMENT_TYPES = {"specification", "submittal", "rfi", "change_order"}
+
+
+def normalize_revision_metadata(document_type: str, metadata: dict[str, object]) -> dict[str, object]:
+    """Map document-specific status metadata onto the indexed evidence-currency contract."""
+    normalized = dict(metadata)
+    kind = document_type.strip().lower().replace("-", "_").replace(" ", "_")
+    if kind not in STATUS_DOCUMENT_TYPES:
+        return normalized
+    generic_status = normalized.get("rfi_status")
+    status = normalized.get("revision_status") or normalized.get("approval_status") or generic_status
+    if status:
+        canonical = " ".join(re.sub(r"[_-]+", " ", str(status).strip().lower()).split())
+        normalized["revision_status"] = canonical
+        normalized["approval_status"] = canonical
+    if kind != "rfi":
+        normalized.pop("rfi_status", None)
+    return normalized
+
+
 def entity_references(text: str) -> dict[str, list[str]]:
     return {
         "equipment_tags": sorted(set(EQUIPMENT_PATTERN.findall(text))),
@@ -365,6 +385,7 @@ def chunk_document(
     overlap: int = 160,
     attributes: dict[str, object] | None = None,
 ) -> list[Chunk]:
+    attributes = normalize_revision_metadata(document_type, attributes or {})
     chunks: list[Chunk] = []
     for page in extracted.pages:
         for section, text in _sections(page):
@@ -379,7 +400,7 @@ def chunk_document(
                         section=section,
                         chunk_index=len(chunks),
                         text=part,
-                        attributes=attributes or {},
+                        attributes=attributes,
                         parent_text=text,
                     )
                 )
@@ -747,7 +768,7 @@ async def run_ingestion(
     document_id, job_id = document.id, job.id
     try:
         extracted = extract_document(Path(document.storage_path), settings)
-        metadata = extract_metadata(extracted)
+        metadata = normalize_revision_metadata(document.document_type, extract_metadata(extracted))
         metadata["index_version"] = settings.index_version
         metadata["document_title"] = metadata.get("title") or Path(document.filename).stem
         chunks = chunk_document(

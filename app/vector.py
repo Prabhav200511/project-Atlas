@@ -12,6 +12,12 @@ def vector_payload(chunk: "Chunk", *, parent: bool = False) -> dict[str, object]
     parent_id = str(uuid.uuid5(chunk.document_id, f"{chunk.page}:{chunk.section}"))
     original_text = chunk.parent_text if parent and chunk.parent_text else chunk.text
     attributes = chunk.attributes or {}
+    canonical_status = (
+        attributes.get("revision_status")
+        or attributes.get("approval_status")
+        or attributes.get("rfi_status")
+        or ""
+    )
     payload: dict[str, object] = {
         "chunk_id": parent_id if parent else chunk_id,
         "parent_id": parent_id,
@@ -30,10 +36,13 @@ def vector_payload(chunk: "Chunk", *, parent: bool = False) -> dict[str, object]
         "equipment_ids": attributes.get("equipment_ids") or attributes.get("equipment_tags") or [],
         "vendor_ids": attributes.get("vendor_ids") or ([attributes["vendor"]] if attributes.get("vendor") else []),
         "revision": attributes.get("revision") or "",
-        "approval_status": attributes.get("approval_status") or attributes.get("revision_status") or "",
+        "revision_status": canonical_status,
+        "approval_status": canonical_status,
         "index_version": attributes.get("index_version") or "1",
     }
     payload.update(attributes)
+    payload["revision_status"] = canonical_status
+    payload["approval_status"] = canonical_status
     return payload
 
 

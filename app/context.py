@@ -51,6 +51,7 @@ class ContextBundle(BaseModel):
     sufficiency_reasons: list[str] = Field(default_factory=list)
     retrieval_attempts: int = 1
     corrective_query: str | None = None
+    requested_revision_status: str | None = None
 
 
 class Reranker(Protocol):
@@ -123,7 +124,7 @@ class PostRetrievalProcessor:
         self, query: str, project_id: uuid.UUID, results: list[RetrievalResult]
     ) -> tuple[list[tuple[RetrievalResult, float]], list[RevisionConflict]]:
         scoped = [item for item in results if item.project_id == project_id]
-        scores = await self.reranker.score(query, [item.text for item in scoped])
+        scores = await self.reranker.score(query, [_rerank_text(item) for item in scoped])
         ranked = sorted(
             zip(scoped, scores, strict=True),
             key=lambda item: (-_revision_priority(item[0]), -item[1], -item[0].rrf_score, item[0].chunk_id),
@@ -310,7 +311,22 @@ def _segments(text: str) -> list[str]:
 
 
 def _terms(text: str) -> set[str]:
-    return {term for term in WORD.findall(text.lower()) if term not in STOP_WORDS}
+    terms: set[str] = set()
+    for token in WORD.findall(text.lower()):
+        terms.add(token)
+        terms.update(part for part in re.split(r"[._/-]+", token) if part)
+    return terms - STOP_WORDS
+
+
+def _rerank_text(item: RetrievalResult) -> str:
+    return "\n".join(
+        (
+            str(item.attributes.get("document_title") or item.citation.filename),
+            item.document_type,
+            item.section,
+            item.text,
+        )
+    )
 
 
 def _identifiers(text: str) -> set[str]:

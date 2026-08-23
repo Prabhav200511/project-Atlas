@@ -3,7 +3,7 @@ import uuid
 import pytest
 
 from app.config import Settings
-from app.context import PostRetrievalProcessor
+from app.context import LexicalReranker, PostRetrievalProcessor
 from app.ingestion import Citation, RetrievalResult
 
 
@@ -12,7 +12,7 @@ class FixedReranker:
         self.scores = scores
 
     async def score(self, query: str, texts: list[str]) -> list[float]:
-        return [self.scores.get(text, 0.5) for text in texts]
+        return [next((score for source, score in self.scores.items() if source in text), 0.5) for text in texts]
 
 
 def result(
@@ -61,6 +61,30 @@ async def test_reranks_and_selects_diverse_chunks() -> None:
     assert len(bundle.chunks) == 2
     assert bundle.chunks[0].rerank_score == 0.99
     assert {chunk.document_id for chunk in bundle.chunks} != {first.document_id, duplicate.document_id}
+
+
+@pytest.mark.asyncio
+async def test_lexical_fallback_keeps_semantic_schedule_hit_using_structured_context() -> None:
+    project_id = uuid.uuid4()
+    schedule = result(
+        "status: not_started\nrisk_flag: critical\ndelay_days: 35",
+        project_id=project_id,
+        filename="atlas_demo_schedule.csv",
+        section="Task T-140",
+        attributes={"document_title": "atlas_demo_schedule"},
+    )
+    distractor = result("An active landscaping topic.", project_id=project_id, filename="landscape.md")
+    settings = Settings(context_min_chunks=1, context_max_chunks=1, reranker_score_threshold=0.3)
+    processor = PostRetrievalProcessor(settings, LexicalReranker())
+
+    bundle = await processor.process(
+        "What is the active schedule risk and its downstream impact?",
+        project_id,
+        [distractor, schedule],
+    )
+
+    assert bundle.chunks[0].document_id == schedule.document_id
+    assert bundle.chunks[0].rerank_score >= settings.reranker_score_threshold
 
 
 @pytest.mark.asyncio
