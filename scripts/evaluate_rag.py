@@ -4,6 +4,7 @@ import argparse
 import asyncio
 import json
 import math
+import sys
 import time
 import uuid
 from dataclasses import dataclass
@@ -11,6 +12,10 @@ from importlib.metadata import version
 from pathlib import Path
 from statistics import fmean
 from typing import Any
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 
 from qdrant_client import AsyncQdrantClient, models
 

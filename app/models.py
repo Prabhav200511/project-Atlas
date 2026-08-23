@@ -59,15 +59,23 @@ class Document(Base):
     size_bytes: Mapped[int] = mapped_column()
     page_count: Mapped[int | None] = mapped_column()
     metadata_json: Mapped[dict] = mapped_column("metadata", JSON, default=dict)
+    active_ingestion_job_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), index=True)
+    ingestion_owner_token: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
 class IngestionJob(Base):
     __tablename__ = "ingestion_jobs"
+    __table_args__ = (
+        UniqueConstraint("document_id", "attempt_number", name="uq_ingestion_jobs_document_attempt"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     project_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("projects.id"), index=True)
     document_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("documents.id"), index=True)
+    attempt_number: Mapped[int] = mapped_column(default=1, server_default="1")
+    owner_token: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), index=True)
+    lease_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     status: Mapped[str] = mapped_column(String(50), default="queued")
     chunk_count: Mapped[int] = mapped_column(default=0)
     attempt_count: Mapped[int] = mapped_column(default=0)

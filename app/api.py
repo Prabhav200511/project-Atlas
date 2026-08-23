@@ -1,12 +1,15 @@
+import asyncio
 import mimetypes
+import os
+import tempfile
 import uuid
 from collections.abc import AsyncIterator
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from pydantic import BaseModel, Field
-from sqlalchemy import select
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy import select, update
+from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.commissioning import (
@@ -29,7 +32,16 @@ from app.equipment import DigitalThreadResponse, equipment_digital_thread, store
 from app.evaluation import EvaluationRunRequest, EvaluationRunResponse, get_evaluation_run, run_evaluation
 from app.demo import VerticalDemoResponse, seed_vertical_demo
 from app.executive import ExecutiveSummary, executive_summary
-from app.ingestion import DocumentType, IngestionError, RetrievalResult, file_hash, retrieve_chunks, run_ingestion, validate_upload
+from app.ingestion import (
+    DocumentType,
+    IngestionError,
+    RetrievalResult,
+    file_hash,
+    next_ingestion_attempt,
+    retrieve_chunks,
+    run_ingestion,
+    validate_upload,
+)
 from app.impact_chain import (
     EquipmentImpactChain,
     ImpactChainResponse,
@@ -213,53 +225,198 @@ async def _latest_job(session: AsyncSession, project_id: uuid.UUID, document_id:
     job = await session.scalar(
         select(IngestionJob)
         .where(IngestionJob.project_id == project_id, IngestionJob.document_id == document_id)
-        .order_by(IngestionJob.created_at.desc())
+        .order_by(IngestionJob.attempt_number.desc(), IngestionJob.id.desc())
     )
     if not job:
         raise HTTPException(404, "Ingestion job not found")
     return job
 
 
-async def _cleanup_document(session: AsyncSession, qdrant: object, settings: object, doc: Document) -> None:
-    from qdrant_client.models import FilterSelector
-    from sqlalchemy import delete, update
-
-    from app.models import (
-        CommissioningStep,
-        CommissioningTestRecord,
-        ComplianceFinding,
-        EvidenceLink,
-        NonConformance,
-        Requirement,
-        RFI,
-    )
-    from app.vector import document_filter
-
+def _source_matches(document: Document) -> bool:
+    path = Path(document.storage_path)
     try:
-        await qdrant.delete(
-            collection_name=settings.qdrant_collection,
-            points_selector=FilterSelector(filter=document_filter(doc.project_id, doc.id)),
-            wait=True,
-        )
-    except Exception:
-        pass
-    Path(doc.storage_path).unlink(missing_ok=True)
-    await session.execute(delete(IngestionJob).where(IngestionJob.document_id == doc.id))
-    await session.execute(delete(EvidenceLink).where(EvidenceLink.document_id == doc.id))
-    await session.execute(delete(RFI).where(RFI.document_id == doc.id))
-    await session.execute(delete(ScheduleTask).where(ScheduleTask.document_id == doc.id))
-    await session.execute(delete(Requirement).where(Requirement.document_id == doc.id))
-    await session.execute(delete(NonConformance).where(NonConformance.procedure_document_id == doc.id))
-    await session.execute(delete(CommissioningStep).where(CommissioningStep.procedure_document_id == doc.id))
-    await session.execute(delete(CommissioningTestRecord).where(CommissioningTestRecord.procedure_document_id == doc.id))
-    await session.execute(
-        delete(ComplianceFinding).where(
-            (ComplianceFinding.specification_document_id == doc.id)
-            | (ComplianceFinding.submittal_document_id == doc.id)
-        )
+        return path.is_file() and file_hash(path.read_bytes()) == document.content_sha256
+    except OSError:
+        return False
+
+
+def _repair_candidate(
+    documents: list[Document],
+    *,
+    filename: str,
+    content_sha256: str,
+    document_type: DocumentType,
+    mime_type: str,
+) -> Document | None:
+    filename_matches = sorted(
+        (document for document in documents if document.filename == filename),
+        key=lambda document: str(document.id),
     )
-    await session.delete(doc)
-    await session.commit()
+    exact_matches = [
+        document
+        for document in filename_matches
+        if document.content_sha256 == content_sha256
+        and document.document_type == document_type
+        and document.mime_type == mime_type
+    ]
+    if len(exact_matches) == 1:
+        return exact_matches[0]
+    if len(exact_matches) > 1:
+        raise IngestionError(
+            "document_repair_ambiguous",
+            "Multiple legacy documents match the uploaded source identity",
+            409,
+        )
+    compatible_matches = [
+        document
+        for document in filename_matches
+        if document.document_type == document_type and document.mime_type == mime_type
+    ]
+    if len(compatible_matches) > 1:
+        raise IngestionError(
+            "document_repair_ambiguous",
+            "Multiple legacy documents share this filename and source contract",
+            409,
+        )
+    if filename_matches:
+        raise IngestionError(
+            "document_repair_mismatch",
+            "No document with this filename matches the uploaded source identity",
+            409,
+        )
+    return None
+
+
+def _stage_repair(canonical_path: Path, content: bytes, expected_hash: str) -> Path:
+    canonical_path.parent.mkdir(parents=True, exist_ok=True)
+    descriptor, staged_name = tempfile.mkstemp(
+        prefix=f".{canonical_path.name}.", suffix=".repair", dir=canonical_path.parent
+    )
+    staged_path = Path(staged_name)
+    try:
+        with os.fdopen(descriptor, "wb") as staged_file:
+            staged_file.write(content)
+            staged_file.flush()
+            os.fsync(staged_file.fileno())
+        if file_hash(staged_path.read_bytes()) != expected_hash:
+            raise OSError("Staged upload failed content validation")
+        return staged_path
+    except Exception:
+        staged_path.unlink(missing_ok=True)
+        raise
+
+
+async def _attach_ingestion_error_details(
+    exc: IngestionError,
+    session: AsyncSession,
+    document_id: uuid.UUID,
+    job_id: uuid.UUID,
+) -> None:
+    status = await session.scalar(select(IngestionJob.status).where(IngestionJob.id == job_id))
+    exc.details = {"document_id": str(document_id), "ingestion_job_id": str(job_id), "status": status}
+
+
+async def _repair_document(
+    *,
+    request: Request,
+    session: AsyncSession,
+    document: Document,
+    document_type: DocumentType,
+    content: bytes,
+    content_sha256: str,
+    mime_type: str,
+) -> UploadResponse:
+    if (
+        document.content_sha256 != content_sha256
+        or document.document_type != document_type
+        or document.mime_type != mime_type
+    ):
+        raise IngestionError(
+            "document_repair_mismatch",
+            "Repair content, document type, and MIME type must match the existing logical source",
+            409,
+        )
+    if document.status in {"queued", "processing", "repairing"}:
+        raise IngestionError("document_repair_in_progress", "Document repair or ingestion is already in progress", 409)
+    if document.status == "completed" and _source_matches(document):
+        raise IngestionError("duplicate_document", "An identical document already exists in this project", 409)
+
+    canonical_path = Path(document.storage_path)
+    attempt_number = await next_ingestion_attempt(session, document.id)
+    try:
+        staged_path = await asyncio.to_thread(_stage_repair, canonical_path, content, content_sha256)
+    except OSError as exc:
+        raise IngestionError("upload_storage_failed", "Could not stage the repair upload", 500) from exc
+
+    observed_status = document.status
+    try:
+        claim = await session.execute(
+            update(Document)
+            .where(
+                Document.id == document.id,
+                Document.project_id == document.project_id,
+                Document.status == observed_status,
+                Document.content_sha256 == content_sha256,
+                Document.document_type == document_type,
+            )
+            .values(status="repairing")
+            .execution_options(synchronize_session=False)
+        )
+        if claim.rowcount != 1:
+            await session.rollback()
+            raise IngestionError("document_repair_in_progress", "Document repair state changed; retry later", 409)
+        job = IngestionJob(
+            project_id=document.project_id,
+            document_id=document.id,
+            attempt_number=attempt_number,
+            status="queued",
+        )
+        session.add(job)
+        await session.flush()
+        os.replace(staged_path, canonical_path)
+        queued = await session.execute(
+            update(Document)
+            .where(Document.id == document.id, Document.status == "repairing")
+            .values(status="queued", active_ingestion_job_id=job.id, ingestion_owner_token=None)
+            .execution_options(synchronize_session=False)
+        )
+        if queued.rowcount != 1:
+            raise IngestionError("document_repair_in_progress", "Document repair state changed; retry later", 409)
+        await session.commit()
+    except IngestionError:
+        await session.rollback()
+        staged_path.unlink(missing_ok=True)
+        raise
+    except (IntegrityError, OperationalError) as exc:
+        await session.rollback()
+        staged_path.unlink(missing_ok=True)
+        raise IngestionError("document_repair_in_progress", "Document repair conflicted; retry later", 409) from exc
+    except OSError as exc:
+        await session.rollback()
+        staged_path.unlink(missing_ok=True)
+        raise IngestionError("upload_storage_failed", "Could not atomically store the repair upload", 500) from exc
+    except Exception:
+        await session.rollback()
+        staged_path.unlink(missing_ok=True)
+        raise
+
+    await session.refresh(document)
+    await session.refresh(job)
+    document_id, job_id = document.id, job.id
+    try:
+        await run_ingestion(
+            session,
+            request.app.state.qdrant,
+            request.app.state.embedder,
+            request.app.state.settings,
+            document,
+            job,
+            request.app.state.graph_store,
+        )
+    except IngestionError as exc:
+        await _attach_ingestion_error_details(exc, session, document_id, job_id)
+        raise
+    return UploadResponse(document=_document_response(document), ingestion=_job_response(job))
 
 
 @router.post("", response_model=ProjectResponse, status_code=201)
@@ -302,6 +459,7 @@ async def upload_document(
     filename = Path(file.filename or "").name
     validate_upload(filename, document_type, len(content), request.app.state.settings)
     content_sha256 = file_hash(content)
+    mime_type = file.content_type or mimetypes.guess_type(filename)[0] or "application/octet-stream"
     existing_docs = (
         await session.scalars(
             select(Document).where(
@@ -310,15 +468,30 @@ async def upload_document(
             )
         )
     ).all()
-    for existing_doc in existing_docs:
-        if existing_doc.status != "completed" or not Path(existing_doc.storage_path).exists():
-            await _cleanup_document(session, request.app.state.qdrant, request.app.state.settings, existing_doc)
-        elif existing_doc.content_sha256 == content_sha256:
-            raise HTTPException(409, "An identical document already exists in this project")
+    same_filename = _repair_candidate(
+        existing_docs,
+        filename=filename,
+        content_sha256=content_sha256,
+        document_type=document_type,
+        mime_type=mime_type,
+    )
+    if same_filename:
+        return await _repair_document(
+            request=request,
+            session=session,
+            document=same_filename,
+            document_type=document_type,
+            content=content,
+            content_sha256=content_sha256,
+            mime_type=mime_type,
+        )
+    if any(document.content_sha256 == content_sha256 for document in existing_docs):
+        raise IngestionError("duplicate_document", "An identical document already exists in this project", 409)
     document_id = uuid.uuid4()
     upload_path = Path(request.app.state.settings.upload_dir) / str(project_id) / str(document_id) / filename
     upload_path.parent.mkdir(parents=True, exist_ok=True)
     upload_path.write_bytes(content)
+    job_id = uuid.uuid4()
     document = Document(
         id=document_id,
         project_id=project_id,
@@ -327,24 +500,26 @@ async def upload_document(
         document_type=document_type,
         status="queued",
         content_sha256=content_sha256,
-        mime_type=file.content_type or mimetypes.guess_type(filename)[0] or "application/octet-stream",
+        mime_type=mime_type,
         size_bytes=len(content),
         metadata_json={},
+        active_ingestion_job_id=job_id,
     )
-    job = IngestionJob(project_id=project_id, document_id=document_id, status="queued")
+    job = IngestionJob(id=job_id, project_id=project_id, document_id=document_id, attempt_number=1, status="queued")
     session.add_all([document, job])
+    document_id_value = document.id
     try:
         await session.commit()
     except IntegrityError as exc:
         await session.rollback()
         upload_path.unlink(missing_ok=True)
-        raise HTTPException(409, "An identical document already exists in this project") from exc
+        raise IngestionError("duplicate_document", "An identical document already exists in this project", 409) from exc
     try:
         await run_ingestion(
             session, request.app.state.qdrant, request.app.state.embedder, request.app.state.settings, document, job, request.app.state.graph_store
         )
     except IngestionError as exc:
-        exc.details = {"document_id": str(document.id), "ingestion_job_id": str(job.id), "status": job.status}
+        await _attach_ingestion_error_details(exc, session, document_id_value, job_id)
         raise
     return UploadResponse(document=_document_response(document), ingestion=_job_response(job))
 
@@ -358,14 +533,15 @@ async def ingest_document(
 ) -> UploadResponse:
     document = await _document_or_404(session, project_id, document_id)
     job = await _latest_job(session, project_id, document_id)
-    if document.status in {"processing", "completed"}:
+    if document.status == "completed":
         raise HTTPException(409, f"Document ingestion is already {document.status}")
+    job_id = job.id
     try:
         await run_ingestion(
             session, request.app.state.qdrant, request.app.state.embedder, request.app.state.settings, document, job, request.app.state.graph_store
         )
     except IngestionError as exc:
-        exc.details = {"document_id": str(document.id), "ingestion_job_id": str(job.id), "status": job.status}
+        await _attach_ingestion_error_details(exc, session, document_id, job_id)
         raise
     return UploadResponse(document=_document_response(document), ingestion=_job_response(job))
 

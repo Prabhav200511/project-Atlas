@@ -23,41 +23,49 @@ class GraphStore:
         document_node = f"document:{document.id}"
         graph.add_node(project_node, type="Project", label=project_id)
         graph.add_node(document_node, type="Document", label=document.filename, document_type=document.document_type)
-        graph.add_edge(project_node, document_node, relation="contains")
+        self._add_edge(graph, project_node, document_node, "contains")
         metadata = document.metadata_json or {}
         equipment = metadata.get("equipment_tags", [])
         for tag in equipment if isinstance(equipment, list) else []:
             node = f"equipment:{project_id}:{tag}"
             graph.add_node(node, type="Equipment", label=tag)
-            graph.add_edge(document_node, node, relation="references")
+            self._add_edge(graph, document_node, node, "references")
         vendor = metadata.get("vendor")
         if isinstance(vendor, str):
             vendor_node = f"vendor:{project_id}:{vendor.lower()}"
             graph.add_node(vendor_node, type="Vendor", label=vendor)
-            graph.add_edge(document_node, vendor_node, relation="submitted_by")
+            self._add_edge(graph, document_node, vendor_node, "submitted_by")
             for tag in equipment if isinstance(equipment, list) else []:
-                graph.add_edge(f"equipment:{project_id}:{tag}", vendor_node, relation="supplied_by")
+                self._add_edge(graph, f"equipment:{project_id}:{tag}", vendor_node, "supplied_by")
         references = metadata.get("spec_references", [])
         for reference in references if isinstance(references, list) else []:
             node = f"specification:{project_id}:{reference}"
             graph.add_node(node, type="SpecificationSection", label=reference)
-            graph.add_edge(document_node, node, relation="references")
+            self._add_edge(graph, document_node, node, "references")
         if document.document_type == "RFI":
             node = f"rfi:{document.id}"
             graph.add_node(node, type="RFI", label=document.filename, status=metadata.get("rfi_status", "unknown"))
-            graph.add_edge(project_node, node, relation="has_rfi")
-            graph.add_edge(node, document_node, relation="source_document")
+            self._add_edge(graph, project_node, node, "has_rfi")
+            self._add_edge(graph, node, document_node, "source_document")
         if document.document_type == "schedule":
             for chunk in chunks:
                 if chunk.section.startswith("Task "):
                     node = f"schedule_task:{document.project_id}:{chunk.section[5:]}"
                     graph.add_node(node, type="ScheduleTask", label=chunk.section[5:])
-                    graph.add_edge(document_node, node, relation="contains")
+                    self._add_edge(graph, document_node, node, "contains")
         if document.document_type == "commissioning_record":
             node = f"test_procedure:{document.id}"
             graph.add_node(node, type="TestProcedure", label=document.filename)
-            graph.add_edge(document_node, node, relation="contains")
+            self._add_edge(graph, document_node, node, "contains")
         self._persist(document.project_id, graph)
+
+    @staticmethod
+    def _add_edge(graph: nx.MultiDiGraph, source: str, target: str, relation: str) -> None:
+        key = f"{relation}:{source}->{target}"
+        for existing_key, data in list(graph.get_edge_data(source, target, default={}).items()):
+            if data.get("relation") == relation and existing_key != key:
+                graph.remove_edge(source, target, existing_key)
+        graph.add_edge(source, target, key=key, relation=relation)
 
     def export(self, project_id: uuid.UUID) -> dict[str, object]:
         graph = self._graph(project_id)

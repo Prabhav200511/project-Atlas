@@ -1,13 +1,14 @@
 import csv
-import hashlib
+import copy
 import io
 import logging
-import math
 import re
 import uuid
 from collections import Counter
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from hashlib import sha256
+from math import log
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal
 
@@ -16,7 +17,7 @@ from pydantic import BaseModel, Field
 from qdrant_client import AsyncQdrantClient
 from qdrant_client.http.exceptions import UnexpectedResponse
 from qdrant_client.models import Distance, FilterSelector, PointStruct, VectorParams
-from sqlalchemy import select
+from sqlalchemy import func, or_, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import Settings
@@ -45,24 +46,113 @@ EQUIPMENT_PATTERN = re.compile(r"\b(?:UPS-[A-Z][A-Z0-9]*|CRAC-\d+|SWGR-[A-Z][A-Z
 SPEC_PATTERN = re.compile(r"\b\d+\.\d+(?:\.\d+)?\b")
 
 
-class LocalHashEmbedder:
-    def __init__(self, settings: Settings) -> None:
-        self.dimensions = settings.embedding_dimensions
-
-    async def embed_documents(self, texts: list[str]) -> list[list[float]]:
-        return [_hash_embedding(text, self.dimensions) for text in texts]
-
-    async def embed_queries(self, texts: list[str]) -> list[list[float]]:
-        return [_hash_embedding(text, self.dimensions) for text in texts]
+async def next_ingestion_attempt(session: AsyncSession, document_id: uuid.UUID) -> int:
+    latest = await session.scalar(
+        select(func.max(IngestionJob.attempt_number)).where(IngestionJob.document_id == document_id)
+    )
+    return int(latest or 0) + 1
 
 
-def _hash_embedding(text: str, dimensions: int) -> list[float]:
-    vector = [0.0] * dimensions
-    for token in re.findall(r"[a-z0-9]+", text.lower()):
-        digest = hashlib.blake2b(token.encode(), digest_size=8).digest()
-        vector[int.from_bytes(digest[:4], "big") % dimensions] += 1 if digest[4] & 1 else -1
-    magnitude = math.sqrt(sum(value * value for value in vector))
-    return [value / magnitude for value in vector] if magnitude else vector
+async def _claim_ingestion(
+    session: AsyncSession,
+    document: Document,
+    job: IngestionJob,
+    *,
+    allow_completed: bool = False,
+) -> uuid.UUID:
+    owner_token = uuid.uuid4()
+    now = datetime.now(UTC)
+    document_statuses = ["queued", "failed", *(["completed"] if allow_completed else [])]
+    document_claim = await session.execute(
+        update(Document)
+        .where(
+            Document.id == document.id,
+            Document.status.in_(document_statuses),
+            Document.ingestion_owner_token.is_(None),
+            or_(
+                Document.active_ingestion_job_id.is_(None),
+                Document.active_ingestion_job_id == job.id,
+            ),
+        )
+        .values(
+            status="processing",
+            active_ingestion_job_id=job.id,
+            ingestion_owner_token=owner_token,
+        )
+        .execution_options(synchronize_session=False)
+    )
+    if document_claim.rowcount != 1:
+        await session.rollback()
+        raise IngestionError("ingestion_not_claimed", "Another ingestion runner owns this document", 409)
+    job_claim = await session.execute(
+        update(IngestionJob)
+        .where(
+            IngestionJob.id == job.id,
+            IngestionJob.status.in_(["queued", "failed"]),
+        )
+        .values(
+            status="processing",
+            owner_token=owner_token,
+            lease_expires_at=None,
+            attempt_count=IngestionJob.attempt_count + 1,
+            started_at=now,
+            completed_at=None,
+            error=None,
+        )
+        .execution_options(synchronize_session=False)
+    )
+    if job_claim.rowcount != 1:
+        await session.rollback()
+        raise IngestionError("ingestion_not_claimed", "Another ingestion runner owns this attempt", 409)
+    await session.commit()
+    await session.refresh(document)
+    await session.refresh(job)
+    return owner_token
+
+
+async def _complete_ingestion(
+    session: AsyncSession,
+    document: Document,
+    job: IngestionJob,
+    owner_token: uuid.UUID,
+    metadata: dict,
+    chunk_count: int,
+) -> bool:
+    now = datetime.now(UTC)
+    job_result = await session.execute(
+        update(IngestionJob)
+        .where(
+            IngestionJob.id == job.id,
+            IngestionJob.status == "processing",
+            IngestionJob.owner_token == owner_token,
+        )
+        .values(status="completed", chunk_count=chunk_count, completed_at=now, lease_expires_at=None)
+        .execution_options(synchronize_session=False)
+    )
+    document_result = await session.execute(
+        update(Document)
+        .where(
+            Document.id == document.id,
+            Document.status == "processing",
+            Document.active_ingestion_job_id == job.id,
+            Document.ingestion_owner_token == owner_token,
+        )
+        .values(
+            status="completed",
+            page_count=int(metadata["page_count"]),
+            metadata_json=metadata,
+            active_ingestion_job_id=None,
+            ingestion_owner_token=None,
+        )
+        .execution_options(synchronize_session=False)
+    )
+    if job_result.rowcount != 1 or document_result.rowcount != 1:
+        await session.rollback()
+        return False
+    await session.commit()
+    await session.refresh(document)
+    await session.refresh(job)
+    return True
 
 
 @dataclass
@@ -132,7 +222,7 @@ class RetrievalResult(BaseModel):
 
 
 def file_hash(content: bytes) -> str:
-    return hashlib.sha256(content).hexdigest()
+    return sha256(content).hexdigest()
 
 
 def validate_upload(filename: str, document_type: str, size_bytes: int, settings: Settings) -> None:
@@ -571,7 +661,7 @@ def _bm25_rank(query: str, payloads: list[dict[str, object]]) -> list[tuple[int,
             frequency = counts[term]
             if not frequency:
                 continue
-            inverse_frequency = math.log(1 + (len(documents) - document_frequency[term] + 0.5) / (document_frequency[term] + 0.5))
+            inverse_frequency = log(1 + (len(documents) - document_frequency[term] + 0.5) / (document_frequency[term] + 0.5))
             score += inverse_frequency * frequency * 2.5 / (frequency + 1.5 * (1 - 0.75 + 0.75 * len(tokens) / max(average_length, 1)))
         if score:
             scored.append((score, payload))
@@ -650,11 +740,11 @@ async def run_ingestion(
     document: Document,
     job: IngestionJob,
     graph_store: "GraphStore | None" = None,
+    *,
+    allow_completed: bool = False,
 ) -> IngestionJob:
-    document.status, job.status = "processing", "processing"
-    job.attempt_count += 1
-    job.started_at, job.error = datetime.now(UTC), None
-    await session.commit()
+    owner_token = await _claim_ingestion(session, document, job, allow_completed=allow_completed)
+    document_id, job_id = document.id, job.id
     try:
         extracted = extract_document(Path(document.storage_path), settings)
         metadata = extract_metadata(extracted)
@@ -686,32 +776,175 @@ async def run_ingestion(
             },
         )
         await index_chunks(client, embedder, settings, chunks)
-        document.status = job.status = "completed"
-        document.page_count = int(metadata["page_count"])
-        document.metadata_json = metadata
-        job.chunk_count = len(chunks)
         from app.equipment import sync_document_entities
 
         await sync_document_entities(session, document, chunks, metadata)
         if graph_store:
-            graph_store.update(document, chunks)
-        job.completed_at = datetime.now(UTC)
-        await session.commit()
+            graph_document = copy.copy(document)
+            graph_document.metadata_json = metadata
+            graph_store.update(graph_document, chunks)
+        if not await _complete_ingestion(session, document, job, owner_token, metadata, len(chunks)):
+            raise IngestionError("ingestion_ownership_lost", "Ingestion ownership changed before completion", 409)
         logger.info("indexed project=%s document=%s chunks=%s", document.project_id, document.id, len(chunks))
         return job
     except IngestionError as exc:
-        await _mark_failed(session, document, job, exc.message)
+        await session.rollback()
+        if await _mark_failed(session, document_id, job_id, owner_token, exc.message):
+            await session.refresh(document)
+            await session.refresh(job)
         raise
     except Exception as exc:
         logger.exception("ingestion_failed project=%s document=%s", document.project_id, document.id)
-        await _mark_failed(session, document, job, "Ingestion failed")
+        await session.rollback()
+        if await _mark_failed(session, document_id, job_id, owner_token, "Ingestion failed"):
+            await session.refresh(document)
+            await session.refresh(job)
         raise IngestionError("ingestion_failed", "Ingestion failed", 500) from exc
 
 
-async def _mark_failed(session: AsyncSession, document: Document, job: IngestionJob, error: str) -> None:
-    document.status, job.status = "failed", "failed"
-    job.error, job.completed_at = error, datetime.now(UTC)
+async def _mark_failed(
+    session: AsyncSession,
+    document_id: uuid.UUID,
+    job_id: uuid.UUID,
+    owner_token: uuid.UUID,
+    error: str,
+) -> bool:
+    now = datetime.now(UTC)
+    job_result = await session.execute(
+        update(IngestionJob)
+        .where(
+            IngestionJob.id == job_id,
+            IngestionJob.status == "processing",
+            IngestionJob.owner_token == owner_token,
+        )
+        .values(status="failed", error=error, completed_at=now, lease_expires_at=None)
+        .execution_options(synchronize_session=False)
+    )
+    document_result = await session.execute(
+        update(Document)
+        .where(
+            Document.id == document_id,
+            Document.status == "processing",
+            Document.active_ingestion_job_id == job_id,
+            Document.ingestion_owner_token == owner_token,
+        )
+        .values(
+            status="failed",
+            active_ingestion_job_id=None,
+            ingestion_owner_token=None,
+        )
+        .execution_options(synchronize_session=False)
+    )
+    if job_result.rowcount != 1 or document_result.rowcount != 1:
+        await session.rollback()
+        return False
     await session.commit()
+    return True
+
+
+async def recover_ingestion_attempt(
+    session: AsyncSession,
+    *,
+    document_id: uuid.UUID,
+    job_id: uuid.UUID,
+    confirm_worker_stopped: bool,
+) -> dict[str, str]:
+    if not confirm_worker_stopped:
+        raise IngestionError(
+            "operator_confirmation_required",
+            "Recovery requires confirmation that the owning worker has stopped",
+            400,
+        )
+    if session.get_bind().dialect.name == "sqlite" and not session.in_transaction():
+        await session.execute(text("BEGIN IMMEDIATE"))
+    document = await session.scalar(
+        select(Document).where(Document.id == document_id).with_for_update()
+    )
+    processing_jobs = list(
+        (
+            await session.scalars(
+                select(IngestionJob)
+                .where(
+                    IngestionJob.document_id == document_id,
+                    IngestionJob.status == "processing",
+                )
+                .order_by(IngestionJob.attempt_number, IngestionJob.id)
+                .with_for_update()
+            )
+        ).all()
+    )
+    if document is None or document.status != "processing":
+        await session.rollback()
+        raise IngestionError(
+            "ingestion_recovery_conflict",
+            "The selected document is no longer processing",
+            409,
+        )
+    if document.active_ingestion_job_id is not None and document.active_ingestion_job_id != job_id:
+        await session.rollback()
+        raise IngestionError(
+            "ingestion_recovery_conflict",
+            "The supplied job is not the document's active processing attempt",
+            409,
+        )
+    if len(processing_jobs) != 1:
+        await session.rollback()
+        raise IngestionError(
+            "ingestion_recovery_ambiguous",
+            "Recovery requires exactly one processing job for the document",
+            409,
+        )
+    if processing_jobs[0].id != job_id:
+        await session.rollback()
+        raise IngestionError(
+            "ingestion_recovery_conflict",
+            "The supplied job is not the document's sole processing attempt",
+            409,
+        )
+    now = datetime.now(UTC)
+    reason = "Operator confirmed the worker stopped; attempt is restartable"
+    job_result = await session.execute(
+        update(IngestionJob)
+        .where(
+            IngestionJob.id == job_id,
+            IngestionJob.document_id == document_id,
+            IngestionJob.status == "processing",
+        )
+        .values(
+            status="failed",
+            owner_token=None,
+            lease_expires_at=None,
+            error=reason,
+            completed_at=now,
+        )
+        .execution_options(synchronize_session=False)
+    )
+    document_result = await session.execute(
+        update(Document)
+        .where(
+            Document.id == document_id,
+            Document.status == "processing",
+            or_(
+                Document.active_ingestion_job_id == job_id,
+                Document.active_ingestion_job_id.is_(None),
+            ),
+        )
+        .values(
+            status="failed",
+            active_ingestion_job_id=None,
+            ingestion_owner_token=None,
+        )
+        .execution_options(synchronize_session=False)
+    )
+    if job_result.rowcount != 1 or document_result.rowcount != 1:
+        await session.rollback()
+        raise IngestionError(
+            "ingestion_recovery_conflict",
+            "The selected document and job are not the same processing attempt",
+            409,
+        )
+    await session.commit()
+    return {"document_id": str(document_id), "job_id": str(job_id), "status": "failed"}
 
 
 async def reindex_documents(
@@ -730,12 +963,19 @@ async def reindex_documents(
     documents = list((await session.scalars(statement)).all())
     reindexed = skipped = 0
     for document in documents:
+        if document.status in {"queued", "processing", "repairing"} or document.active_ingestion_job_id:
+            raise IngestionError("ingestion_not_claimed", "An active ingestion attempt already owns this document", 409)
         if not force and (document.metadata_json or {}).get("index_version") == settings.index_version:
             skipped += 1
             continue
-        job = IngestionJob(project_id=project_id, document_id=document.id, status="queued")
+        job = IngestionJob(
+            project_id=project_id,
+            document_id=document.id,
+            attempt_number=await next_ingestion_attempt(session, document.id),
+            status="queued",
+        )
         session.add(job)
         await session.flush()
-        await run_ingestion(session, client, embedder, settings, document, job)
+        await run_ingestion(session, client, embedder, settings, document, job, allow_completed=True)
         reindexed += 1
     return {"matched": len(documents), "reindexed": reindexed, "skipped": skipped}
