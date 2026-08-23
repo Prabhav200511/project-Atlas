@@ -1,4 +1,7 @@
 import json
+import subprocess
+import sys
+from pathlib import Path
 
 import httpx
 import pytest
@@ -16,6 +19,31 @@ from scripts.production_acceptance import (
 API_URL = "https://api.example"
 FRONTEND_URL = "https://atlas.example"
 CANARY_NAME = "Atlas Production Canary 2026-08-23-deadbee"
+
+
+def test_direct_cli_can_load_the_synthetic_corpus_module(tmp_path) -> None:
+    result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/production_acceptance.py",
+            "--api-url",
+            API_URL,
+            "--frontend-url",
+            FRONTEND_URL,
+            "--project-name",
+            "not-a-synthetic-canary",
+            "--output",
+            str(tmp_path / "report.json"),
+        ],
+        cwd=Path(__file__).parents[1],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode != 0
+    assert "project name must identify an Atlas synthetic canary" in result.stderr
+    assert "ModuleNotFoundError" not in result.stderr
 
 
 def runner(

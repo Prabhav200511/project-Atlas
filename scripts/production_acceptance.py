@@ -1089,7 +1089,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--allow-synthetic-mutations", action="store_true")
     args = parser.parse_args(argv)
 
-    from scripts.seed_demo import sources
+    if __package__:
+        from scripts.seed_demo import sources
+    else:
+        from seed_demo import sources
 
     with httpx.Client(follow_redirects=True, timeout=180) as client:
         runner = AcceptanceRunner(
