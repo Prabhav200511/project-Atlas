@@ -3,7 +3,7 @@
 **Evidence-backed EPC project intelligence connecting requirements to equipment, delivery, schedule, commissioning evidence, and human decision.**
 
 [![Built for ET AI Hackathon 2026](https://img.shields.io/badge/ET_AI_Hackathon_2026-Problem_Statement_4-2563EB?style=for-the-badge)](https://hackathon.example.com)
-[![Next.js 15](https://img.shields.io/badge/Next.js_15-Black?style=for-the-badge&logo=next.js&logoColor=white)](https://nextjs.org)
+[![Next.js 16](https://img.shields.io/badge/Next.js_16-Black?style=for-the-badge&logo=next.js&logoColor=white)](https://nextjs.org)
 [![FastAPI](https://img.shields.io/badge/FastAPI-009688?style=for-the-badge&logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com)
 [![Python 3.11+](https://img.shields.io/badge/Python-3.11+-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://python.org)
 [![Qdrant](https://img.shields.io/badge/Qdrant-Vector_DB-DC2626?style=for-the-badge)](https://qdrant.tech)
@@ -13,25 +13,27 @@
 
 ## 🌐 Deployment Targets & Resources
 
-| Resource | Configured target | Verification status (2026-08-22) |
+| Resource | Configured target | Verification status (2026-08-23) |
 | :--- | :--- | :--- |
-| **Frontend Dashboard** | **[https://project-atlas.netlify.app](https://project-atlas.netlify.app)** | **NOT VERIFIED.** The URL returned HTTP 200 but served an unrelated climate-awareness “Project ATLAS” site (Droughts/Flooding/Global Warming), not this EPC dashboard. |
-| **Backend API (Swagger)** | **[https://project-atlas-rd7v.onrender.com/docs](https://project-atlas-rd7v.onrender.com/docs)** | **BLOCKED.** The configured Render target has not returned an HTTP response; do not treat its Swagger UI as available. |
-| **Backend health/readiness** | **[https://project-atlas-rd7v.onrender.com/health](https://project-atlas-rd7v.onrender.com/health)** and **[/ready](https://project-atlas-rd7v.onrender.com/ready)** | **BLOCKED.** Both probes timed out after 60 seconds; a bounded `/health` curl timed out after 120.011 seconds with HTTP `000` and zero bytes. DNS resolution and TCP 443 succeeded, so the service accepted a connection without producing an HTTP response. |
+| **Frontend Dashboard** | **[https://project-atlas-production.netlify.app](https://project-atlas-production.netlify.app)** | **VERIFIED.** HTTP 200, correct EPC identity, 27-document canary rendered, Copilot fallback showed three citations. Published frontend artifact: `fd45ea4`. The unrelated climate site at `project-atlas.netlify.app` was left untouched. |
+| **Backend API (Swagger)** | **[https://project-atlas-rd7v.onrender.com/docs](https://project-atlas-rd7v.onrender.com/docs)** | **VERIFIED.** HTTP 200 on Render deployment `2c28072`. |
+| **Backend health/readiness** | **[https://project-atlas-rd7v.onrender.com/health](https://project-atlas-rd7v.onrender.com/health)** and **[/ready](https://project-atlas-rd7v.onrender.com/ready)** | **VERIFIED.** Liveness HTTP 200; readiness HTTP 200 with API, PostgreSQL, and Qdrant all `ok`. Exact Netlify-origin CORS preflight passed. |
 | **Architecture Guide** | **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)** | Deep-dive into data models, vector schemas, and AI workflows |
 | **3-Minute Walkthrough** | **[docs/DEMO_SCRIPT.md](docs/DEMO_SCRIPT.md)** | Step-by-step presentation script for hackathon judges |
 
-The local configuration and build gates are passing (backend: 101 passed, 3 warnings; frontend: 9 passed; lint, typecheck, and production build passed), but those results do not verify either configured deployment target. Production seeding/re-upload and Copilot/RFI smoke tests remain deferred until deployment remediation is complete.
+Fresh verification at `2026-08-23T12:54:08Z` passed the backend suite (`107 passed`, 3 known warnings), frontend suite (`9 passed`), lint, typecheck, Next.js 16.2.10 production build, deployment verifier, and rendered-browser smoke. The synthetic production canary ingested 27/27 documents and Copilot returned `PARTIAL` with three document-backed citations.
+
+The configured Groq model is not currently available to this deployment account. Atlas handled the provider `404` with its cited evidence-only fallback and returned HTTP 200, but generated Copilot prose is not verified. Free Render instances may cold-start, ingestion is synchronous, the free Qdrant cluster can suspend after inactivity, and the free Render PostgreSQL database must be replaced or upgraded before `2026-09-22`. Application authentication and RBAC are not implemented; deploy behind an authenticated gateway.
 
 Run the read-only deployment identity and dependency checks with:
 
 ```bash
 python scripts/verify_deployment.py \
   --api-url https://project-atlas-rd7v.onrender.com \
-  --frontend-url https://project-atlas.netlify.app
+  --frontend-url https://project-atlas-production.netlify.app
 ```
 
-The command is expected to exit nonzero while the targets retain the blocked statuses above. After Netlify assigns the corrected EPC dashboard URL, pass that exact URL as `--frontend-url` instead.
+The command must exit zero with liveness, readiness, docs, CORS, and frontend identity all marked `ok` before treating the deployment as available.
 
 ---
 
@@ -68,7 +70,7 @@ Specification Deviation → Vendor Resubmission → Delivery Risk → Schedule I
 
 ```mermaid
 flowchart LR
-    subgraph Frontend [Next.js 15 Dashboard]
+    subgraph Frontend [Next.js 16 Dashboard]
         UI["Interactive UI & Copilot"]
     end
 

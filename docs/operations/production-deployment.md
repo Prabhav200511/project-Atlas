@@ -4,10 +4,10 @@
 
 - Repository: `Prabhav200511/project-Atlas`
 - Branch: `main`
-- Deployed commit: `fd45ea4578fdd4eb9e534114584608fb9be024c5`
+- Last verified deployed commit: `2c28072dc0e261c117242822ba5f90c61960f8f4`
 - Render service: `project-Atlas` (`Python 3`, free instance, Oregon)
 - Backend URL: `https://project-atlas-rd7v.onrender.com`
-- Verified at: `2026-08-23T12:39:22Z`
+- Verified at: `2026-08-23T12:54:08Z`
 
 Render runs from the repository root with:
 
@@ -155,13 +155,32 @@ Render HTTP 500 search: no matching logs
 
 The configured Groq model returned a provider `404` indicating that the model does not exist or is not available to this account. Atlas handled this as designed: the API returned `200`, the Copilot result remained `PARTIAL`, and the UI showed the cited evidence-only fallback. Generated prose is therefore not verified in this deployment; provider configuration and multi-provider routing remain follow-up work.
 
+## Final verification gate
+
+Fresh exact-tree and production evidence at `2026-08-23T12:54:08Z`:
+
+```text
+Backend pytest: 107 passed, 3 known warnings
+Frontend Vitest: 9 passed
+Frontend lint: passed
+Frontend typecheck: passed
+Next.js 16.2.10 production build: passed
+Render deployment: 2c28072dc0e261c117242822ba5f90c61960f8f4 live
+Netlify artifact: fd45ea4578fdd4eb9e534114584608fb9be024c5 published
+Deployment verifier: all five checks passed
+/ready: HTTP 200, api/database/qdrant ok
+Frontend: HTTP 200, Project Atlas EPC identity confirmed
+```
+
+Netlify canceled later documentation-only builds because no frontend input changed; the published artifact remains the verified `fd45ea4` runtime. This is expected build-ignore behavior, not a failed production promotion.
+
 The first recovered runtime took about 63 seconds from the start command to Render declaring the service live. The free Render web service can spin down during inactivity, so this deployment does not provide an always-on SLA. The free Qdrant cluster can suspend after inactivity and must be reactivated before readiness returns to `200` again.
 
 The free Render PostgreSQL instance is scheduled to expire on `2026-09-22` unless it is upgraded or replaced. Treat that date as an operational deadline; the database will otherwise be deleted.
 
 ## Rollback
 
-For an application regression, open Render **Events**, select the last successful deployment for `fcf4ce7293c0ca447556b723e26edeb6ffae8497`, and choose **Rollback**. Re-run all three probes after rollback.
+For an application regression, open Render **Events**, select the last verified deployment for `2c28072dc0e261c117242822ba5f90c61960f8f4`, and choose **Rollback**. Re-run liveness, readiness, docs, CORS, and frontend identity checks after rollback. If that deployment is itself implicated, use the recovered application commit `fcf4ce7293c0ca447556b723e26edeb6ffae8497`.
 
 For a frontend regression, open the Netlify project `project-atlas-production`, select **Deploys**, open the prior successful production deploy for `fd45ea4578fdd4eb9e534114584608fb9be024c5`, and publish that deploy. Re-run frontend identity, CORS preflight, and the automated verifier after rollback. Do not redirect or replace the unrelated `project-atlas.netlify.app` site.
 
