@@ -20,11 +20,11 @@ class Settings(BaseSettings):
     gemini_api_key: str | None = Field(default=None, repr=False, validation_alias=AliasChoices("GEMINI_API_KEY", "ATLAS_GEMINI_API_KEY"))
     groq_api_key: str | None = Field(default=None, repr=False, validation_alias=AliasChoices("GROQ_API_KEY", "ATLAS_GROQ_API_KEY"))
     groq_model: str = Field(default="openai/gpt-oss-120b", validation_alias=AliasChoices("GROQ_MODEL", "ATLAS_GROQ_MODEL"))
-    embedding_dimensions: int = 1536
+    embedding_dimensions: int = 384
     embedding_model: str = "BAAI/bge-small-en-v1.5"
     embedding_cache_dir: str | None = "./.cache/fastembed"
-    qdrant_collection: str = "atlas_chunks"
-    index_version: str = "2"
+    qdrant_collection: str = "atlas_chunks_semantic_v1"
+    index_version: str = "3"
     dense_retrieval_limit: int = 20
     bm25_retrieval_limit: int = 20
     hybrid_retrieval_limit: int = 12

@@ -16,8 +16,8 @@ from qdrant_client import AsyncQdrantClient, models
 
 from app.config import Settings
 from app.context import ContextBundle, ContextChunk, EvidenceSpan, LexicalReranker, PostRetrievalProcessor
+from app.embeddings import FastEmbedder
 from app.ingestion import (
-    LocalHashEmbedder,
     RetrievalResult,
     _payload,
     _retrieval_result,
@@ -108,7 +108,11 @@ async def build_index(
     *,
     contextual: bool = True,
 ):
-    embedder = LocalHashEmbedder(settings)
+    embedder = FastEmbedder(
+        settings.embedding_model,
+        settings.embedding_dimensions,
+        settings.embedding_cache_dir,
+    )
     catalog: dict[str, tuple[str, int]] = {}
     for document_type, path in sources():
         document_id = uuid.uuid5(project_id, path.name)
@@ -381,7 +385,7 @@ def markdown(report: dict[str, Any]) -> str:
 async def evaluate(output_dir: Path) -> dict[str, Any]:
     project_id = uuid.uuid5(uuid.NAMESPACE_DNS, "atlas-rag-evaluation")
     settings = Settings(
-        embedding_dimensions=128,
+        embedding_dimensions=384,
         qdrant_collection="atlas_rag_evaluation",
         context_min_chunks=1,
     )

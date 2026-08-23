@@ -9,7 +9,8 @@ from qdrant_client import AsyncQdrantClient
 
 from app.config import get_settings
 from app.database import create_database_engine, create_session_factory
-from app.ingestion import LocalHashEmbedder, reindex_documents
+from app.embeddings import FastEmbedder
+from app.ingestion import reindex_documents
 
 
 async def run(project_id: uuid.UUID, document_id: uuid.UUID | None, force: bool) -> dict[str, int]:
@@ -21,12 +22,17 @@ async def run(project_id: uuid.UUID, document_id: uuid.UUID | None, force: bool)
         api_key=settings.qdrant_api_key,
         check_compatibility=False,
     )
+    embedder = FastEmbedder(
+        settings.embedding_model,
+        settings.embedding_dimensions,
+        settings.embedding_cache_dir,
+    )
     try:
         async with sessions() as session:
             return await reindex_documents(
                 session,
                 qdrant,
-                LocalHashEmbedder(settings),
+                embedder,
                 settings,
                 project_id,
                 document_id,

@@ -3,6 +3,7 @@ import uuid
 from fastapi.testclient import TestClient
 
 from app.config import Settings
+from app.embeddings import FastEmbedder
 from app.ingestion import Chunk
 from app.main import app
 from app.vector import project_filter, vector_payload
@@ -14,6 +15,9 @@ def test_semantic_embedding_model_and_cache_defaults() -> None:
 
     assert settings.embedding_model == "BAAI/bge-small-en-v1.5"
     assert settings.embedding_cache_dir == "./.cache/fastembed"
+    assert settings.embedding_dimensions == 384
+    assert settings.qdrant_collection == "atlas_chunks_semantic_v1"
+    assert settings.index_version == "3"
 
 
 def test_settings_accept_connection_overrides() -> None:
@@ -101,4 +105,5 @@ def test_startup_initializes_local_clients() -> None:
     with TestClient(app):
         assert app.state.db_engine is not None
         assert app.state.qdrant is not None
+        assert isinstance(app.state.embedder, FastEmbedder)
         assert app.state.workflow is not None

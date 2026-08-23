@@ -13,11 +13,12 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from app.config import get_settings
 from app.commissioning import CommissioningService
 from app.compliance import ComplianceService
+from app.embeddings import FastEmbedder
 from app.procurement import ProcurementRiskService
 from app.schedule import ScheduleService
 from app.database import check_database, create_database_engine, create_session_factory, initialize_database
 from app.graph import GraphStore
-from app.ingestion import IngestionError, LocalHashEmbedder
+from app.ingestion import IngestionError
 from app.impact_chain import ImpactChainService
 from app.workflow import KnowledgeService, build_workflow
 
@@ -36,7 +37,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         url=settings.qdrant_url, api_key=settings.qdrant_api_key, check_compatibility=False
     )
     app.state.settings = settings
-    app.state.embedder = LocalHashEmbedder(settings)
+    app.state.embedder = FastEmbedder(
+        settings.embedding_model,
+        settings.embedding_dimensions,
+        settings.embedding_cache_dir,
+    )
     app.state.graph_store = GraphStore(settings.graph_dir)
     app.state.knowledge_service = KnowledgeService(settings, app.state.qdrant, app.state.embedder)
     app.state.compliance_service = ComplianceService(settings)
