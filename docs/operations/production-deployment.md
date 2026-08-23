@@ -134,6 +134,27 @@ Document-backed citations: 3
 
 The canary used only `data/synthetic_epc` through `scripts/seed_demo.py`. The verification record intentionally excludes answer text and source-document content.
 
+## Rendered dashboard smoke test
+
+The production UI was exercised in the signed-in in-app browser at `2026-08-23T12:48:43Z` against the canary above.
+
+```text
+Identity: Project Atlas / EPC project intelligence
+Truth labels: Synthetic demo data / API connected
+Safety labels: evidence-led suggestions and no live external feeds
+Unrelated climate markers: absent
+Selected canary documents: 27 ingested
+Service health: api: ok
+Executive summary: loaded without an error notice
+Copilot UI: AI evidence response / Suggestion · not approved
+Visible citations: 3
+Browser development logs: 0 entries
+Netlify function log: 2 successful invocations, no error entry
+Render HTTP 500 search: no matching logs
+```
+
+The configured Groq model returned a provider `404` indicating that the model does not exist or is not available to this account. Atlas handled this as designed: the API returned `200`, the Copilot result remained `PARTIAL`, and the UI showed the cited evidence-only fallback. Generated prose is therefore not verified in this deployment; provider configuration and multi-provider routing remain follow-up work.
+
 The first recovered runtime took about 63 seconds from the start command to Render declaring the service live. The free Render web service can spin down during inactivity, so this deployment does not provide an always-on SLA. The free Qdrant cluster can suspend after inactivity and must be reactivated before readiness returns to `200` again.
 
 The free Render PostgreSQL instance is scheduled to expire on `2026-09-22` unless it is upgraded or replaced. Treat that date as an operational deadline; the database will otherwise be deleted.
