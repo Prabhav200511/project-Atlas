@@ -43,3 +43,6 @@ graphs/*.json
 
 # Isolated implementation worktrees
 .worktrees/
+
+# Local agent and production-acceptance evidence
+.superpowers/sdd/
