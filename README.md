@@ -16,14 +16,14 @@
 | Resource | Configured target | Verification status (2026-08-23) |
 | :--- | :--- | :--- |
 | **Frontend Dashboard** | **[https://project-atlas-production.netlify.app](https://project-atlas-production.netlify.app)** | **VERIFIED.** HTTP 200, correct EPC identity, 27-document canary rendered, Copilot fallback showed three citations. Published frontend artifact: `fd45ea4`. The unrelated climate site at `project-atlas.netlify.app` was left untouched. |
-| **Backend API (Swagger)** | **[https://project-atlas-rd7v.onrender.com/docs](https://project-atlas-rd7v.onrender.com/docs)** | **VERIFIED.** HTTP 200 on Render deployment `2c28072`. |
+| **Backend API (Swagger)** | **[https://project-atlas-rd7v.onrender.com/docs](https://project-atlas-rd7v.onrender.com/docs)** | **VERIFIED.** HTTP 200 on Render deployment `7eb4a4a`. |
 | **Backend health/readiness** | **[https://project-atlas-rd7v.onrender.com/health](https://project-atlas-rd7v.onrender.com/health)** and **[/ready](https://project-atlas-rd7v.onrender.com/ready)** | **VERIFIED.** Liveness HTTP 200; readiness HTTP 200 with API, PostgreSQL, and Qdrant all `ok`. Exact Netlify-origin CORS preflight passed. |
 | **Architecture Guide** | **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)** | Deep-dive into data models, vector schemas, and AI workflows |
 | **3-Minute Walkthrough** | **[docs/DEMO_SCRIPT.md](docs/DEMO_SCRIPT.md)** | Step-by-step presentation script for hackathon judges |
 
 Fresh verification at `2026-08-23T12:54:08Z` passed the backend suite (`107 passed`, 3 known warnings), frontend suite (`9 passed`), lint, typecheck, Next.js 16.2.10 production build, deployment verifier, and rendered-browser smoke. The synthetic production canary ingested 27/27 documents and Copilot returned `PARTIAL` with three document-backed citations.
 
-The configured Groq model is not currently available to this deployment account. Atlas handled the provider `404` with its cited evidence-only fallback and returned HTTP 200, but generated Copilot prose is not verified. Free Render instances may cold-start, ingestion is synchronous, the free Qdrant cluster can suspend after inactivity, and the free Render PostgreSQL database must be replaced or upgraded before `2026-09-22`. Application authentication and RBAC are not implemented; deploy behind an authenticated gateway.
+The production gateway now uses Groq-hosted `openai/gpt-oss-120b`. Production planning and draft-generation requests return provider HTTP 200, replacing the former unavailable-model `404`. The current canary drafts are still rejected by Atlas's grounding verifier as unsupported, so the API returns `INSUFFICIENT_EVIDENCE` rather than exposing unverified claims; that verifier behavior remains deferred with the broader Task 4 work. Free Render instances may cold-start, ingestion is synchronous, the free Qdrant cluster can suspend after inactivity, and the free Render PostgreSQL database must be replaced or upgraded before `2026-09-22`. Application authentication and RBAC are not implemented; deploy behind an authenticated gateway.
 
 Run the read-only deployment identity and dependency checks with:
 

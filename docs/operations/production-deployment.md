@@ -153,7 +153,28 @@ Netlify function log: 2 successful invocations, no error entry
 Render HTTP 500 search: no matching logs
 ```
 
-The configured Groq model returned a provider `404` indicating that the model does not exist or is not available to this account. Atlas handled this as designed: the API returned `200`, the Copilot result remained `PARTIAL`, and the UI showed the cited evidence-only fallback. Generated prose is therefore not verified in this deployment; provider configuration and multi-provider routing remain follow-up work.
+The previously configured Groq model returned a provider `404` indicating that the model did not exist or was unavailable to this account. Atlas handled that historical failure as designed: the API returned `200`, the Copilot result remained `PARTIAL`, and the UI showed the cited evidence-only fallback.
+
+## GPT-OSS production model verification
+
+Sanitized production evidence at `2026-08-23T13:47:48Z` for backend commit `7eb4a4a36f13c683d2c34eec345c7c1393ebf7ee`:
+
+```text
+Configured model: openai/gpt-oss-120b
+Transport/provider: Groq OpenAI-compatible chat completions
+Render build and startup: passed
+Provider planning requests: HTTP 200
+Provider draft-generation requests: HTTP 200
+Former unavailable-model response: no longer reproduced
+Deployment verifier: all five checks passed
+/ready: HTTP 200, api/database/qdrant ok
+Canary documents: 27 completed
+Canary final status: INSUFFICIENT_EVIDENCE
+Canary citations exposed: 0
+Grounding decision: generated claims were not supported by project evidence
+```
+
+This proves that GPT-OSS 120B is active for production planning and draft generation, while also preserving the grounding boundary: Atlas does not expose the drafts when every generated claim fails verification. No threshold or verifier behavior was changed as part of the model deployment; the verification mismatch remains deferred with Task 4. This record intentionally excludes answer text and source-document content.
 
 ## Final verification gate
 
