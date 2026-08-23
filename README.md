@@ -23,6 +23,16 @@
 
 The local configuration and build gates are passing (backend: 101 passed, 3 warnings; frontend: 9 passed; lint, typecheck, and production build passed), but those results do not verify either configured deployment target. Production seeding/re-upload and Copilot/RFI smoke tests remain deferred until deployment remediation is complete.
 
+Run the read-only deployment identity and dependency checks with:
+
+```bash
+python scripts/verify_deployment.py \
+  --api-url https://project-atlas-rd7v.onrender.com \
+  --frontend-url https://project-atlas.netlify.app
+```
+
+The command is expected to exit nonzero while the targets retain the blocked statuses above. After Netlify assigns the corrected EPC dashboard URL, pass that exact URL as `--frontend-url` instead.
+
 ---
 
 ## 💡 Problem & Motivation
