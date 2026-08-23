@@ -49,6 +49,15 @@ class Settings(BaseSettings):
     def allowed_cors_origins(self) -> list[str]:
         return [origin.strip().rstrip("/") for origin in self.cors_origins.split(",") if origin.strip()]
 
+    @field_validator("database_url", mode="before")
+    @classmethod
+    def use_asyncpg_database_driver(cls, value: str) -> str:
+        if value.startswith("postgresql://"):
+            return f"postgresql+asyncpg://{value.removeprefix('postgresql://')}"
+        if value.startswith("postgres://"):
+            return f"postgresql+asyncpg://{value.removeprefix('postgres://')}"
+        return value
+
     @field_validator("qdrant_api_key", "gemini_api_key", "groq_api_key", mode="before")
     @classmethod
     def blank_secret_is_unset(cls, value: str | None) -> str | None:

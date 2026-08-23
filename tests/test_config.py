@@ -26,6 +26,16 @@ def test_settings_accept_connection_overrides() -> None:
     assert settings.qdrant_url == "http://qdrant:6333"
 
 
+def test_settings_use_asyncpg_for_standard_render_postgres_urls() -> None:
+    standard = Settings(database_url="postgresql://user:pass@db:5432/atlas")
+    legacy = Settings(database_url="postgres://user:pass@db:5432/atlas")
+    qualified = Settings(database_url="postgresql+asyncpg://user:pass@db:5432/atlas")
+
+    assert standard.database_url == "postgresql+asyncpg://user:pass@db:5432/atlas"
+    assert legacy.database_url == "postgresql+asyncpg://user:pass@db:5432/atlas"
+    assert qualified.database_url == "postgresql+asyncpg://user:pass@db:5432/atlas"
+
+
 def test_settings_accept_gemini_configuration() -> None:
     settings = Settings(gemini_api_key="test-key", chat_model="gemini-3.5-flash")
 
