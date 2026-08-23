@@ -38,5 +38,6 @@ async def test_rag_evaluation_uses_held_out_split_and_writes_both_reports(tmp_pa
     assert len(comparison["non_contextual"]["cases"]) == 2
     assert (tmp_path / "rag_evaluation.json").is_file()
     assert (tmp_path / "rag_evaluation.md").is_file()
+    assert result["test"]["advanced"]["metrics"]["citation_precision"] >= 0.95
     if result["conclusion"].startswith("Advanced RAG beat"):
         assert result["test"]["advanced"]["metrics"]["citation_completeness"] >= result["test"]["baseline"]["metrics"]["citation_completeness"]

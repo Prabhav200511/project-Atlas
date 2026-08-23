@@ -140,6 +140,38 @@ async def test_prefers_approved_revision_and_reports_conflict() -> None:
 
 
 @pytest.mark.asyncio
+async def test_revision_priority_does_not_promote_an_unrelated_document_over_relevance() -> None:
+    project_id = uuid.uuid4()
+    proposed_recovery = result(
+        "# Recovery\nThe proposed switchgear delivery recovery measure adds a second shift.",
+        project_id=project_id,
+        filename="CO-001.md",
+        section="Recovery",
+        attributes={"revision_status": "proposed"},
+    )
+    answered_route = result(
+        "# Route\nThe answered RFI confirms the delivery gate location.",
+        project_id=project_id,
+        filename="RFI-005.md",
+        section="Route",
+        attributes={"revision_status": "answered"},
+    )
+    settings = Settings(context_min_chunks=1, context_max_chunks=2, reranker_score_threshold=0)
+    processor = PostRetrievalProcessor(
+        settings,
+        FixedReranker({proposed_recovery.text: 0.9, answered_route.text: 0.2}),
+    )
+
+    bundle = await processor.process(
+        "Is a switchgear delivery recovery measure approved?",
+        project_id,
+        [proposed_recovery, answered_route],
+    )
+
+    assert bundle.chunks[0].document_id == proposed_recovery.document_id
+
+
+@pytest.mark.asyncio
 async def test_compression_preserves_ids_and_enforces_token_limit() -> None:
     project_id = uuid.uuid4()
     chunks = [

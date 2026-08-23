@@ -127,7 +127,7 @@ class PostRetrievalProcessor:
         scores = await self.reranker.score(query, [_rerank_text(item) for item in scoped])
         ranked = sorted(
             zip(scoped, scores, strict=True),
-            key=lambda item: (-_revision_priority(item[0]), -item[1], -item[0].rrf_score, item[0].chunk_id),
+            key=lambda item: (-item[1], -item[0].rrf_score, -_revision_priority(item[0]), item[0].chunk_id),
         )
         conflicts, allowed = _revision_conflicts(ranked)
         selected = _select_diverse(
