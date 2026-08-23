@@ -49,7 +49,7 @@ class GeminiGateway:
         return (response.text or "").strip()
 
     async def _generate_groq(self, instructions: str, content: str, *, json_output: bool = False) -> str:
-        model = self.settings.groq_model or "llama-3.3-70b-versatile"
+        model = self.settings.groq_model or "openai/gpt-oss-120b"
         prompt_instructions = (
             f"{instructions}\n\nEnsure your response is formatted as valid JSON object."
             if json_output

@@ -172,6 +172,7 @@ cd frontend && npm run check
 | `QDRANT_URL` | Qdrant Vector DB instance URL | Qdrant Cloud / `http://localhost:6333` |
 | `QDRANT_API_KEY` | Authentication key for Qdrant | Required for Qdrant Cloud |
 | `GROQ_API_KEY` | Primary fast AI provider key | Groq API (`gsk_...`) |
+| `GROQ_MODEL` | Groq-hosted generation model | `openai/gpt-oss-120b` |
 | `GEMINI_API_KEY` | Fallback AI provider key | Google GenAI API |
 | `FAST_RERANK` | Enable instant lexical scoring | `1` (enabled by default for cloud free-tier) |
 | `NEXT_PUBLIC_API_URL` | Backend URL for Next.js client | `https://project-atlas-rd7v.onrender.com` |

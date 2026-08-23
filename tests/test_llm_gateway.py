@@ -16,6 +16,39 @@ class FailingModels:
 
 
 @pytest.mark.asyncio
+async def test_default_groq_request_uses_production_gpt_oss_model(monkeypatch) -> None:
+    captured_payload: dict = {}
+
+    class SuccessfulResponse:
+        status_code = 200
+
+        def json(self) -> dict:
+            return {"choices": [{"message": {"content": "grounded response"}}]}
+
+    class RecordingAsyncClient:
+        def __init__(self, **_kwargs) -> None:
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args) -> None:
+            pass
+
+        async def post(self, _url, *, json, headers):
+            captured_payload.update(json)
+            return SuccessfulResponse()
+
+    monkeypatch.setattr("app.llm.httpx.AsyncClient", RecordingAsyncClient)
+    gateway = GeminiGateway(Settings(groq_api_key="test-key"))
+
+    response = await gateway.generate("instructions", "content")
+
+    assert response == "grounded response"
+    assert captured_payload["model"] == "openai/gpt-oss-120b"
+
+
+@pytest.mark.asyncio
 async def test_invalid_api_key_becomes_safe_gateway_error() -> None:
     gateway = GeminiGateway(Settings(gemini_api_key="invalid"))
     gateway.client = SimpleNamespace(models=FailingModels())

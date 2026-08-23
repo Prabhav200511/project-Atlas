@@ -19,7 +19,7 @@ class Settings(BaseSettings):
     qdrant_api_key: str | None = Field(default=None, repr=False, validation_alias=AliasChoices("QDRANT_API_KEY", "ATLAS_QDRANT_API_KEY"))
     gemini_api_key: str | None = Field(default=None, repr=False, validation_alias=AliasChoices("GEMINI_API_KEY", "ATLAS_GEMINI_API_KEY"))
     groq_api_key: str | None = Field(default=None, repr=False, validation_alias=AliasChoices("GROQ_API_KEY", "ATLAS_GROQ_API_KEY"))
-    groq_model: str = Field(default="llama-3.3-70b-versatile", validation_alias=AliasChoices("GROQ_MODEL", "ATLAS_GROQ_MODEL"))
+    groq_model: str = Field(default="openai/gpt-oss-120b", validation_alias=AliasChoices("GROQ_MODEL", "ATLAS_GROQ_MODEL"))
     embedding_dimensions: int = 1536
     embedding_model: str = "BAAI/bge-small-en-v1.5"
     embedding_cache_dir: str | None = "./.cache/fastembed"

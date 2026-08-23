@@ -25,7 +25,7 @@ services:
       - key: GROQ_API_KEY
         sync: false
       - key: GROQ_MODEL
-        sync: false
+        value: "openai/gpt-oss-120b"
       - key: FAST_RERANK
         value: "1"
       - key: FRONTEND_URL
