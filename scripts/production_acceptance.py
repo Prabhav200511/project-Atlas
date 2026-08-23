@@ -114,6 +114,14 @@ def sanitize_detail(value: Any) -> Any:
     return str(value)
 
 
+def valid_evaluation_terminal(body: Any) -> bool:
+    return (
+        isinstance(body, dict)
+        and bool(body.get("id"))
+        and body.get("status") in {"COMPLETED", "COMPLETED_WITH_FAILURES", "FAILED"}
+    )
+
+
 class AcceptanceRunner:
     def __init__(
         self,
@@ -873,7 +881,7 @@ class AcceptanceRunner:
             "POST",
             "/api/evaluation/run",
             json_body={"project_id": project_id, "fixture_name": "synthetic_small", "fixture_format": "json"},
-            validate=lambda body: isinstance(body, dict) and bool(body.get("id")) and body.get("status") in {"COMPLETED", "FAILED"},
+            validate=valid_evaluation_terminal,
             failure_reason="evaluation_run_contract_failed",
         )
         evaluation_id = str(evaluation.get("id") or "") if isinstance(evaluation, dict) else ""

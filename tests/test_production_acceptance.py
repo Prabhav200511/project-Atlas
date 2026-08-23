@@ -13,6 +13,7 @@ from scripts.production_acceptance import (
     AcceptanceStatus,
     execute_acceptance,
     sanitize_detail,
+    valid_evaluation_terminal,
 )
 
 
@@ -161,6 +162,11 @@ def test_failed_semantic_assertion_is_not_reported_as_pass() -> None:
     assert step.status is AcceptanceStatus.FAIL
     assert step.http_status == 200
     assert step.detail == {"reason": "missing_citations"}
+
+
+@pytest.mark.parametrize("status", ["COMPLETED", "COMPLETED_WITH_FAILURES", "FAILED"])
+def test_evaluation_terminal_contract_accepts_every_persisted_terminal_status(status: str) -> None:
+    assert valid_evaluation_terminal({"id": "run-1", "status": status})
 
 
 def test_report_redacts_content_and_raw_provider_errors() -> None:

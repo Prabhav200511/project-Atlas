@@ -220,6 +220,27 @@ async def test_generation_outage_returns_valid_retrieved_evidence() -> None:
 
 
 @pytest.mark.asyncio
+async def test_rejected_generation_returns_safe_retrieved_evidence() -> None:
+    class RejectingResponder:
+        async def verify(self, *_args, **_kwargs):
+            from app.workflow import AnswerResult
+
+            return AnswerResult(
+                answer="Insufficient evidence in this project.",
+                confidence=0,
+                status="INSUFFICIENT_EVIDENCE",
+            )
+
+    service = KnowledgeService(Settings(), None, None, responder=RejectingResponder())
+    result = await service._verify_answer(object(), context())
+
+    assert result.status == "PARTIAL"
+    assert result.citations[0].chunk_id == "chunk-15"
+    assert result.claims[0].text == "UPS-A battery autonomy shall be 15 minutes."
+    assert "AI-generated claims could not be verified" in result.answer
+
+
+@pytest.mark.asyncio
 async def test_generated_answer_never_receives_unrequested_proposed_supplemental_evidence() -> None:
     bundle = mixed_currency_context()
     response = {

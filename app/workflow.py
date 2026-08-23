@@ -752,7 +752,14 @@ class KnowledgeService:
         verify = getattr(self.responder, "verify", None)
         if not verify:
             raise IngestionError("generation_verification_unavailable", "Answer verification is unavailable", 503)
-        return await verify(generated, context)
+        answer = await verify(generated, context)
+        if answer.status == "INSUFFICIENT_EVIDENCE" and context.sufficient and context.chunks:
+            return _evidence_fallback(
+                context,
+                notice="AI-generated claims could not be verified. Retrieved project evidence:",
+                missing="AI-generated claims could not be verified; showing retrieved evidence only.",
+            )
+        return answer
 
     async def _retrieve_answered_rfis(self, project_id: str, question: str, plan: QueryPlan) -> list[RetrievalResult]:
         return await retrieve_chunks(
@@ -1072,7 +1079,12 @@ def _insufficient_answer(
     )
 
 
-def _evidence_fallback(context: ContextBundle) -> AnswerResult:
+def _evidence_fallback(
+    context: ContextBundle,
+    *,
+    notice: str = "AI generation is unavailable. Retrieved project evidence:",
+    missing: str = "AI generation was unavailable; showing retrieved evidence only.",
+) -> AnswerResult:
     if not context.chunks:
         return _insufficient_answer(["No retrieved evidence was available."])
     claims: list[AnswerClaim] = []
@@ -1097,7 +1109,7 @@ def _evidence_fallback(context: ContextBundle) -> AnswerResult:
         for chunk in context.chunks[:3]
     ]
     return AnswerResult(
-        answer="AI generation is unavailable. Retrieved project evidence:\n"
+        answer=notice + "\n"
         + "\n".join(
             f"{label}: {claim.text} [C{index}]"
             for index, (label, claim) in enumerate(zip(labels, claims, strict=True), start=1)
@@ -1106,7 +1118,7 @@ def _evidence_fallback(context: ContextBundle) -> AnswerResult:
         claims=claims,
         confidence=0.5,
         status="PARTIAL",
-        missing_information=["AI generation was unavailable; showing retrieved evidence only."],
+        missing_information=[missing],
         conflicting_sources=context.revision_conflicts,
     )
 
