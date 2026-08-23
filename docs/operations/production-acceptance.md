@@ -1,6 +1,6 @@
 # Production Acceptance Record
 
-**Status:** Acceptance runner implemented; production baseline pending deployment of the runner checkpoint.
+**Status:** Baseline captured on `d93d8b1`: 74 checks passed and 2 semantic checks failed.
 
 **Production API:** `https://project-atlas-rd7v.onrender.com`
 
@@ -34,4 +34,15 @@ $Canary = "Atlas Production Canary 2026-08-23-$Sha"
   --output .superpowers/sdd/2026-08-23-production-acceptance-router/baseline.json
 ```
 
-The baseline results will be added only after Render and Netlify identify the runner checkpoint SHA and the complete automated and rendered-browser manifests have been executed.
+## Baseline: 2026-08-23
+
+- Render and Netlify both identified deployed commit `d93d8b1` before the run.
+- Public liveness, readiness, API docs, CORS, and frontend identity probes passed.
+- The guarded runner created `Atlas Production Canary 2026-08-23-d93d8b1`; the project remains because the API has no project-delete operation.
+- Automated result: **74 PASS, 2 FAIL, 0 BLOCKED** across all 49 deployed OpenAPI operations and the supporting ingestion/document checks.
+- `copilot_grounding` returned HTTP 200 but failed the grounding contract.
+- `evaluation_run` returned HTTP 201 but failed the evaluation-result contract; the persisted evaluation read still passed.
+- All 11 major dashboard views rendered for the exact canary project: overview, Knowledge/RFI, equipment thread, compliance, impact chain, mitigation, commissioning, synthetic supply chain, evidence, evaluation, and documents.
+- The browser console contained no warnings or errors while traversing those views.
+
+The sanitized machine-readable baseline is intentionally stored under ignored `.superpowers/sdd/` evidence storage. It excludes prompts, completions, document content, secrets, provider messages, and raw response bodies.
